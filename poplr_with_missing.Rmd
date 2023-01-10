@@ -1,0 +1,100 @@
+---
+title: "How to handle NA in PoPLR?"
+date: Tue 10 Jan 2023 09:56:17 AWST
+output:
+  html_document:
+    toc: true
+    theme: cerulean
+    number_sections: true
+---
+
+```{r}
+# Mon 26 Dec 2022 11:57:08 AEDT
+source('poplr.r')
+```
+
+# Post ARVO submission
+
+```{r make-series-from-res}
+#
+# Convert data into a good format for PoPLR.
+#
+# @param res List indexed as [[i_eye]][[i_rep]][[i_visit]][, c(..., "npres", "final")]
+# @param visits Take the first `visits` measurements for each eye-rep.
+# @param field Either "final" or "npres"
+#
+# @return List of final thresholds as [[i_eye]][[i_rep]][location, visit].
+#         Pad any locations that do not have all visits with NA at the early visits.
+#         Assumes that once a location has commenced testing, it remains tested.
+#
+make_series <- function(res, visits = 1:5, field = "final") {
+    lapply(res, function(eye) {
+        lapply(eye, function(rep) {
+            n <- nrow(rep[[tail(visits, 1)]])    # max number of locations for this rep
+            d <- sapply(visits, function(visit) {
+                t <- rep[[visit]][, field]
+                if (length(t) < n)
+                    t <- c(t, rep(NA, n - length(t)))
+                t
+            })
+        })
+    })
+}
+```
+
+
+```{r}
+# Tue 10 Jan 2023 09:04:09 AWST
+source('poplr.r')
+load('arrest6.stable.2.Rdata')
+a <- make_series(res[[3]], 1:5)
+b <- a[[25]][[1]]
+
+b
+
+z <- b[,5] > 16
+zz <- b[,5] > 16 & 1:nrow(b) <= 52
+
+PoPLR(b[z, ], w = FALSE)
+PoPLR(b[zz, ], w = FALSE)
+
+PoPLR(b[53:56, ], w = FALSE)
+PoPLR(b[53:56, 2:5], w = FALSE)
+
+PoPLR(matrix(c(
+    40, 30, 30, 30, 30,
+    40, NA, 20, 15, NA), nrow = 2, byrow = TRUE), w = FALSE)
+
+PoPLR(matrix(c(
+    40, 30, 30, 30, 30,
+    40, NA, 20, NA, 10), nrow = 2, byrow = TRUE), w = FALSE)
+
+PoPLR(matrix(c(
+    30, 30, 30+10, 30, 30,
+    NA, NA, 20+10, 15, 10), nrow = 2, byrow = TRUE), w = FALSE)
+
+PoPLR(matrix(c(
+    30, 30, 30+10, 30, 30,
+    NA, 25, 20+10, 15, 10), nrow = 2, byrow = TRUE), w = FALSE)
+```
+
+Using PoPLR that does not correct for repeated perms in sequences with NAs:
+ 
+|  Run                             | squish NAs   | diff perms    |
+|:---------------------------------|-------------:|--------------:|
+| PoPLR(b[z, ], w = FALSE)         |  0.01680672  |   0.06666667  |
+| PoPLR(b[zz, ], w = FALSE)        |  0.3319328   |   0.3375      |
+| PoPLR(b[53:56, ], w = FALSE)     |  0.1134454   |   0.1041667   |
+| PoPLR(b[53:56, 2:5], w = FALSE)  |  0.06521739  |   0.1041667   |
+| PoPLR( matrix(c(                 |              |             |
+|  &#12;  30, 30, 30, 30, 30,          |               |               |
+|  &#12;  30, NA, 20, 15, NA), ...)    | 0.01260504    | 0.008333333   |
+|PoPLR(matrix(c(                       |               |               |                 
+|  &#12;  30, 30, 30, 30, 30,          |               |               | 
+|  &#12;  30, NA, 20, NA, 10), ...)    | 0.02941176    | 0.008333333   |
+| PoPLR( matrix(c(                     |               |               |
+|  &#12;   30, 30, 30+10, 30, 30,      |               |               |
+|  &#12;   NA, NA, 20+10, 15, 10), ...)| 0.01260504    | 0.008333333   |
+|PoPLR(matrix(c(                       |               |               |                 
+|  &#12;  30, 30, 30+10, 30, 30,       |  | | 
+|  &#12;  NA, 25, 20+10, 15, 10), ...) |  | |
