@@ -1,0 +1,115 @@
+---
+title: "Incorporating Events Into PoPLR"
+output:
+  html_document:
+    toc: true
+    theme: cerulean
+    number_sections: true
+---
+# Scenario
+
+## Data
+We have a series of visual fields for an eye measured at visits $1..n$ 
+with ARREST. Let $m_{i} \in\{R, Y, 17..40\}$ be the measured visual threshold at visit $i \in [1,n]$.
+We use $R$ for 'Red' (perimetrically blind), $Y$ for 'Yellow' which is
+less than 17 dB but greater than $R$, and 
+$17..40$ as dB thresholds (also known as $G$ or 'Green').
+
+## Task
+There are two main progression calling scenarios.
+\begin{enumerate}
+    \item Clinical Trial, where as soon as someone is called progressing, they 
+    leave the trial. Typically $n$ is small like 8 or 10.
+
+    \item Clinical Practice, where when progression is identified, it is treated and monitored,
+    hoping that progression will stop or the rate will slow. In this scenario, $n$ can 
+    span many visits, with different interventions at different time.
+\end{enumerate}
+
+Perhaps common to these two scenarios is the question 
+\begin{quote}
+    is this patient progressing at the same rate as last visit?
+\end{quote}
+(Assuming that stable = progressing at a rate of zero.)
+
+
+## PoPLR only good for diagnosis
+
+Because PoPLR has H0 as ``rate is 0'', I can't see how it can be used to answer the more 
+general question with H0 as ``rate is $\beta$'' and H1: ``rate $\ne beta$''. 
+
+As per ARVO 2023 submission, PoPLR works well in the clinical trial scenario as it is 
+good for diagnosis, but does not give a rate, therefore is not that useful for monitoring.
+
+It would have to be paired with a method for finding a rate (PLR, SPROG, ...).
+
+
+## PoPLR and ARREST
+
+Using PoPLR for diagnosis with ARREST works well 
+for locations that are green for all visits $1..n$.
+For locations that are added and are green at Visit $n$, it also seems to work, but I need 
+to do some work on the repeated counting of sub-sequences with NAs in the permutations.
+
+What to do with the Green to Yellow (G2Y) and Yellow to Red (Y2R) events?
+
+Ideally we want them to contribute to the PoPLR ``probability that this is stable'' p value.
+In the hypothesis testing framework like PoPLR we would have
+\begin{itemize}
+    \item H0: Event G2Y/Y2R is due to measurement noise and does not indicate progression.
+    \item H1: Event G2Y/Y2R is due to progression.
+\end{itemize}
+
+# Idea 1
+
+For a subsequence $\{m_a, \ldots, m_b = Y\}$, where all $m_i$ are Green 
+for $1 \le a \le i < b \le n$,
+what is the chance that $m_b \ge 17$?
+
+If we do PLR on $\{m_a, \ldots, m_{b-1}\}$ and use that to predict $m_b$, say $m_b^\prime$, 
+how far off Yellow is that?
+
+But if slope of PLR is shallow, wont get near Yellow, and if it is steep then PoPLR should 
+have already picked it up (ie already had low p-value in visit $< b$).
+
+Thus we should:
+\begin{itemize}
+    \item (at least) include the past green section ($m_a\ldots m_{b-1}$) in PoPLR; and 
+    \item if the field ``is stable'' (high p value) look at the difference between the mean of the 
+          Green and 16 dB.
+\end{itemize}
+
+Perhaps the question is: what is the probablility of getting Yellow if your true threshold
+is stable at ``mean of Green'' $M = \mbox{mean}(\{m_a,ldots,m_{b-1}\})$ (or whatever true 
+threshold would be most likely to give you $M$).
+
+To get a G2Y you need to get a ZEST threshold  $\le 16$, not see 16 twice.
+
+## Model 1
+
+```{r Henson}
+# Mon  9 Jan 2023 17:43:07 AWST
+pr_seeing <- function(x, tt, fpr=0, fnr=0) {
+    sd <- min(6, exp(3.27 -0.081 * tt))
+    return (fpr + (1 - fpr - fnr)*(1 - pnorm(x, tt, sd)))
+}
+```
+
+```{r model1}
+tts <- 17:30
+cbind(tts, 
+    round(sapply(tts, function(tt) (1 - pr_seeing(16, tt))^2), 3),
+    round(sapply(tts, function(tt) (1 - pr_seeing(16, tt, fpr = 0.15, fnr = 0.03))^2), 3)
+)
+```
+
+
+# Aside: hetroscedasticity and weighted regression
+
+Shouldn't we be using weighted regression?
+Actually, maybe in the Green range it is all OK - hetro. enough.
+
+Allison points out that it is OK in any sequence when $abs(m_n - m_1)$ is smallish: that is, 
+the variance of the errors are roughly equal (all bad, all good, etc).
+
+\end{document}

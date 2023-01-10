@@ -21,27 +21,38 @@
 #
 # @return p-value = prob of having this data if the series has not truly progressed at visit n
 #
-source('arrest5.r')
+source('arrest6.r')
 source('poplr.r')
 PoPLR_ARREST <- function(series, threshold = 0.05, perm_count = 5000, warnings = TRUE,
-                         numBaselines = 2,
-                         eventP = 0.00001) {
+                         numBaselines = 2) {
     n <- ncol(series)
 
-    stopifnot(n > 2)
-
-    z <- apply(series, 1, function(rr) sum(!is.na(rr)) > numBaselines)
-
         # Green -> Yellow/Red
-    z.y <- z & series[, n] == .ArrestEnv$YELLOW
-    if (sum(z.y) > 0 && any(series[z.y, n - 1] > .ArrestEnv$YELLOW))
-        return(eventP)
+        # of the green base, which are Yellow at visit n
+    base <- apply(series, 1, function(rr) {
+        zz <- !is.na(rr) & rr > .ArrestEnv$YELLOW
+        sum(zz) >= numBaselines
+    })
 
-        # a Orange -> Red
-    z.y <- z & series[, n] == .ArrestEnv$RED
-    if (sum(z.y) > 0 && any(series[z.y, n - 1] > .ArrestEnv$RED))
-        return(eventP)
+    z.y <- base & series[, n] == .ArrestEnv$YELLOW
+    ps.y <- sapply(which(z.y), function(loc) {
+        ys <- series[loc, ]
+        z <- ys > .ArrestEnv$YELLOW
+        mean_green <- mean(ys[z])
+        1 - pr_seeing(.ArrestEnv$B, tt = mean_green, fpr = 0.15, fnr = 0.03)^2
+    })
+
+        # Yellows/Greens -> Red
+    base <- apply(series, 1, function(rr) {
+        zz <- !is.na(rr) & rr > .ArrestEnv$RED
+        sum(zz) >= numBaselines
+    })
+
+    z.r <- base & series[, n] == .ArrestEnv$RED
+    ps.r <- ifelse(any(z.r), 0, 1)
 
     z <- series[, n] > .ArrestEnv$YELLOW
-    return(PoPLR(series[z, ], threshold = threshold, perm_count = perm_count, warnings = warnings))
+    ps.p <- PoPLR(series[z, ], threshold = threshold, perm_count = perm_count, warnings = warnings)
+
+    return(min(c(ps.y, ps.r, ps.p)))
 }
