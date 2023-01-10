@@ -62,12 +62,12 @@ PoPLR(b[53:56, ], w = FALSE)
 PoPLR(b[53:56, 2:5], w = FALSE)
 
 PoPLR(matrix(c(
-    40, 30, 30, 30, 30,
-    40, NA, 20, 15, NA), nrow = 2, byrow = TRUE), w = FALSE)
+    30, 30, 30, 30, 30,
+    NA, NA, 20, 15, 10), nrow = 2, byrow = TRUE), w = FALSE)
 
 PoPLR(matrix(c(
-    40, 30, 30, 30, 30,
-    40, NA, 20, NA, 10), nrow = 2, byrow = TRUE), w = FALSE)
+    30, 30, 30, 30, 30,
+    NA, 25, 20, 15, 10), nrow = 2, byrow = TRUE), w = FALSE)
 
 PoPLR(matrix(c(
     30, 30, 30+10, 30, 30,
@@ -80,21 +80,38 @@ PoPLR(matrix(c(
 
 Using PoPLR that does not correct for repeated perms in sequences with NAs:
  
-|  Run                             | squish NAs   | diff perms    |
-|:---------------------------------|-------------:|--------------:|
-| PoPLR(b[z, ], w = FALSE)         |  0.01680672  |   0.06666667  |
-| PoPLR(b[zz, ], w = FALSE)        |  0.3319328   |   0.3375      |
-| PoPLR(b[53:56, ], w = FALSE)     |  0.1134454   |   0.1041667   |
-| PoPLR(b[53:56, 2:5], w = FALSE)  |  0.06521739  |   0.1041667   |
-| PoPLR( matrix(c(                 |              |             |
-|  &#12;  30, 30, 30, 30, 30,          |               |               |
-|  &#12;  30, NA, 20, 15, NA), ...)    | 0.01260504    | 0.008333333   |
-|PoPLR(matrix(c(                       |               |               |                 
-|  &#12;  30, 30, 30, 30, 30,          |               |               | 
-|  &#12;  30, NA, 20, NA, 10), ...)    | 0.02941176    | 0.008333333   |
-| PoPLR( matrix(c(                     |               |               |
-|  &#12;   30, 30, 30+10, 30, 30,      |               |               |
-|  &#12;   NA, NA, 20+10, 15, 10), ...)| 0.01260504    | 0.008333333   |
-|PoPLR(matrix(c(                       |               |               |                 
-|  &#12;  30, 30, 30+10, 30, 30,       |  | | 
-|  &#12;  NA, 25, 20+10, 15, 10), ...) |  | |
+|  Run                             | squish NAs   | diff perms    | selected perms |
+|:---------------------------------|-------------:|--------------:|----------------:|
+| PoPLR(b[z, ], w = FALSE)         |  0.01680672  |   0.06666667  | 0.06722689  |
+| PoPLR(b[zz, ], w = FALSE)        |  0.3319328   |   0.3375      | 0.3319328   |
+| PoPLR(b[53:56, ], w = FALSE)     |  0.1134454   |   0.1041667   | 0.06521739  |
+| PoPLR(b[53:56, 2:5], w = FALSE)  |  0.06521739  |   0.1041667   |  0.06521739 |
+| PoPLR( matrix(c(                 |              |               |             |
+|  &#12;  30, 30, 30, 30, 30,          |               |               |           |
+|  &#12;  30, NA, 20, 15, NA), ...)    | 0.01260504    | 0.008333333   |           |
+|PoPLR(matrix(c(                       |               |               |           |                        
+|  &#12;  30, 30, 30, 30, 30,          |               |               |           |        
+|  &#12;  30, NA, 20, NA, 10), ...)    | 0.02941176    | 0.008333333   |           |
+|                                      |               |               |           |
+|PoPLR(matrix(c(                       |               |               |           |
+| &#12; 30, 30, 30, 30, 30,            |               |               |           |
+| &#12; NA, NA, 20, 15, 10), ...))     |               |               | 0.0210084 |
+|PoPLR(matrix(c(                       |               |               |           |
+| &#12; 30, 30, 30, 30, 30,            |               |               |           |
+| &#12; NA, 25, 20, 15, 10), ...))     |               |               | 0.004202  |
+| PoPLR( matrix(c(                     |               |               |           |
+|  &#12;   30, 30, 30+10, 30, 30,      |               |               |           |
+|  &#12;   NA, NA, 20+10, 15, 10), ...)| 0.01260504    | 0.008333333   | 0.0210084 |
+|PoPLR(matrix(c(                       |               |               |           |
+|  &#12;  30, 30, 30+10, 30, 30,       |               |               |           | 
+|  &#12;  NA, 25, 20+10, 15, 10), ...) |               |               | 0.02941176|
+
+
+The principle behind each method:
+
+ * squish - just ignore the NAs and leave them in for everything (in effect altering/stretching the 
+            gaps between xs for some perms)
+ * diff perms - use different perms for shorter sequences so NAs are left out (worried about GVE here)
+ * selected perms - use one set of perms, but for rows with NAs, leave out perms that do not have NAs 
+                    just at either end (ie we don't know what happened at that visit, so cannot 
+                    include it in a perm)
