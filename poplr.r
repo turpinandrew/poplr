@@ -20,7 +20,7 @@
 PoPLR_basic <- function(series, threshold = 0.05, perm_count = 5000) {
         # get the S statistic for a single series
     getS <- function(series, threshold = 0.05) {
-        xs <- 1:ncol(series)
+        xs <- seq_len(ncol(series))
         pvals <- apply(series, 1, function(rr) {
             m <- lm(rr ~ xs)
             pt(coef(summary(m))[2, 3], m$df, lower = TRUE)  # one sided
@@ -36,16 +36,17 @@ PoPLR_basic <- function(series, threshold = 0.05, perm_count = 5000) {
     S <- getS(series, threshold)
 
         # get S values for perm_count permutations of series
-    S_perms <- sapply(1:perm_count, function(i) getS(series[ , order(runif(ncol(series)))], threshold))
+    S_perms <- sapply(1:perm_count, function(i) getS(series[, order(runif(ncol(series)))], threshold))
 
     #print(S)
     #print(table(round(S_perms)))
-    return(1 - sum(S_perms <= S)/perm_count)
+    return(1 - sum(S_perms <= S) / perm_count)
 }
 
 # test
 #dbs <- round(runif(52, 0, 41))
 #series <- data.frame(dbs, dbs-1, dbs-2, dbs - 3)
+#colnames(series) <- NULL
 #p <- PoPLR(series, perm_count = 500)
 #p
 
@@ -124,10 +125,11 @@ get_perms <- function(n, perm_count = 5000, warnings = TRUE) {
 # @param threshold Only include PLR pvalues less than or equal to this number in S
 # @param perm_count Number of permutations of series to get p-value for S
 # @param warnings TRUE for warnings from PoPLR, FALSE for not.
+# @param arrest EXPERIMENTAL - do not use!
 #
 # @return Probability that series is not progressing (kind of).
 #
-PoPLR <- function(series, threshold = 0.05, perm_count = 5000, warnings = TRUE) {
+PoPLR <- function(series, threshold = 0.05, perm_count = 5000, warnings = TRUE, arrest = FALSE) {
         # throw out locations with 2 or less visits
     z <- apply(series, 1, function(rr) sum(!is.na(rr)) > 2)
     series <- series[z, ]
@@ -142,7 +144,7 @@ PoPLR <- function(series, threshold = 0.05, perm_count = 5000, warnings = TRUE) 
         # get permutation vectors for largest n
     n <- ncol(series)
     perms <- get_perms(n, perm_count, warnings)
-    perm_count <- length(perms) - 1
+    perm_count <- length(perms) - 1  # does not include first 1:n
 
         # p_loc_perm[loc number, perm_number] == p value
     p_loc_perm <- matrix(NA, nrow = nrow(series), ncol = perm_count + 1)
@@ -171,25 +173,35 @@ PoPLR <- function(series, threshold = 0.05, perm_count = 5000, warnings = TRUE) 
             if (b - a + 1 == n.loc) {
                 ys <- ys[a:b]
 
-                yd <- ys - ybar
-
-                beta <- sum(xd * yd) / sumXdSq
-                alpha <- ybar - beta * xbar
-                res <- ys - alpha - beta * xs
-                sse <- sum((ys - alpha - beta * xs)^2)
-                if (sse < 1e-10)  { # often == 0 for VF analysis of a small number of points. Also assumes sqrtSumXdSq is not super small.
-                    if (beta >= 0) {
-                        p_loc_perm[loc, perm] <- 1   # t -> Inf  (assuming 0/0 -> Inf)
-                    } else {
-                        p_loc_perm[loc, perm] <- 0   # t -> -Inf
-                    }
+                if (arrest && -1 %in% ys) {
+                    ii <- n.loc
+                    while (ii >= 1 && ys[[ii]] == -1)
+                        ii <- ii - 1
+                    if (ii > 1 && all(ys[1:ii] != -1))
+                        p_loc_perm[loc, perm] <- 0.5^(2 + ii)   # {!Red}+ -> {Red}+ could exist if tt=0 with this prob
+                    else
+                        p_loc_perm[loc, perm] <- 1   # {.}*Red{.}* -> {Red}+
                 } else {
-                    se <- sqrt(sse / (n.loc - 2)) / sqrtSumXdSq
-                    t <- beta / se
-                    p_loc_perm[loc, perm] <- pt(t, n.loc - 2)
-        #cat(res)
-        #cat(sprintf("\nloc=%2s perm=%2s n=%2.0f beta=%+4.2f sse=%5.2f se=%4.2f t=%+5.2f p=%4.2f\n",
-        #        loc, perm, n.loc, beta, sse, se, t, pt(t, n.loc - 2)))
+                    yd <- ys - ybar
+
+                    beta <- sum(xd * yd) / sumXdSq
+                    alpha <- ybar - beta * xbar
+                    res <- ys - alpha - beta * xs
+                    sse <- sum((ys - alpha - beta * xs)^2)
+                    if (sse < 1e-10)  { # often == 0 for VF analysis of a small number of points. Also assumes sqrtSumXdSq is not super small.
+                        if (beta >= 0) {
+                            p_loc_perm[loc, perm] <- 1   # t -> Inf  (assuming 0/0 -> Inf)
+                        } else {
+                            p_loc_perm[loc, perm] <- 0   # t -> -Inf
+                        }
+                    } else {
+                        se <- sqrt(sse / (n.loc - 2)) / sqrtSumXdSq
+                        t <- beta / se
+                        p_loc_perm[loc, perm] <- pt(t, n.loc - 2)
+            #cat(res)
+            #cat(sprintf("\nloc=%2s perm=%2s n=%2.0f beta=%+4.2f sse=%5.2f se=%4.2f t=%+5.2f p=%4.2f\n",
+            #      loc, perm, n.loc, beta, sse, se, t, pt(t, n.loc - 2)))
+                    }
                 }
             }
         }
@@ -207,23 +219,319 @@ PoPLR <- function(series, threshold = 0.05, perm_count = 5000, warnings = TRUE) 
     #print(table(round(S_values)))
     others <- tail(S_values, -1)
     pp <-  sum(others < S_values[[1]]) + sum(others == S_values[[1]])/2  # another assumption here for small discrete distributions.
-    return(1 - pp / perm_count)
+    return(list(p = 1 - pp / perm_count, ss = S_values))
+}
+
+# Keep xs the same even if NAs
+# This definitely alters false-pos rate as S_obs always has NAs at the start.
+PoPLR3 <- function(series, threshold = 1, perm_count = 5000, warnings = TRUE, arrest = FALSE) {
+        # throw out locations with 2 or less visits
+    z <- apply(series, 1, function(rr) sum(!is.na(rr)) > 2)
+    series <- series[z, ]
+
+        # throw out any columns that are all NA
+    z <- apply(series, 2, function(cc) any(!is.na(cc)))
+    series <- series[, z]
+
+    stopifnot(nrow(series) > 1)
+    stopifnot(ncol(series) > 2)
+
+        # get permutation vectors for largest n
+    n <- ncol(series)
+    perms <- get_perms(n, perm_count, warnings)
+    perm_count <- length(perms) - 1  # does not include first 1:n
+
+        # p_loc_perm[loc number, perm_number] == p value
+    p_loc_perm <- matrix(NA, nrow = nrow(series), ncol = perm_count + 1)
+
+        # setup xs
+    n.loc <- n
+    xs <- seq_len(n.loc)
+    xbar <- mean(xs)
+    xd <- xs - xbar
+    sumXdSq <- sum(xd * xd)
+    sqrtSumXdSq <- sqrt(sumXdSq)
+
+    # Now compute all the p-values for each loc in each appropriate permutation
+        # Only include perms for NA rows where no intermittent NAs
+    for (loc in seq_len(nrow(series))) {
+        series_loc <- series[loc, ]
+        ybar <- mean(series_loc, na.rm = TRUE)
+
+        for (perm in 0:perm_count + 1) {
+            ys <- series_loc[perms[[perm]]]   # this is length n >= n.loc
+
+                # remove leading and trailing NAs and if the result
+                # is not length(n.loc) skip this perm
+            ii <- which(!is.na(ys))
+            a <- head(ii, 1)
+            b <- tail(ii, 1)
+            if (b - a + 1 == n.loc) {
+                ys <- ys[a:b]
+
+                if (arrest && -1 %in% ys) {
+                    ii <- n.loc
+                    while (ii >= 1 && ys[[ii]] == -1)
+                        ii <- ii - 1
+                    if (ii > 1 && all(ys[1:ii] != -1))
+                        p_loc_perm[loc, perm] <- 0.5^(2 + ii)   # {!Red}+ -> {Red}+ could exist if tt=0 with this prob
+                    else
+                        p_loc_perm[loc, perm] <- 1   # {.}*Red{.}* -> {Red}+
+                } else {
+                    yd <- ys - ybar
+
+                    beta <- sum(xd * yd, na.rm = TRUE) / sumXdSq
+                    alpha <- ybar - beta * xbar
+                    res <- ys - alpha - beta * xs
+                    sse <- sum((ys - alpha - beta * xs)^2, na.rm = TRUE)
+                    if (sse < 1e-10)  { # often == 0 for VF analysis of a small number of points. Also assumes sqrtSumXdSq is not super small.
+                        if (beta >= 0) {
+                            p_loc_perm[loc, perm] <- 1   # t -> Inf  (assuming 0/0 -> Inf)
+                        } else {
+                            p_loc_perm[loc, perm] <- 0   # t -> -Inf
+                        }
+                    } else {
+                        se <- sqrt(sse / (n.loc - 2)) / sqrtSumXdSq
+                        t <- beta / se
+                        p_loc_perm[loc, perm] <- pt(t, sum(!is.na(xs)) - 2)
+            #cat(res)
+            #cat(sprintf("\nloc=%2s perm=%2s n=%2.0f beta=%+4.2f sse=%5.2f se=%4.2f t=%+5.2f p=%4.2f\n",
+            #      loc, perm, n.loc, beta, sse, se, t, pt(t, n.loc - 2)))
+                    }
+                }
+            }
+        }
+    }
+
+    S_values <- apply(p_loc_perm, 2, function(ps) {
+        z <- ps <= max(min(ps, na.rm = TRUE), threshold)
+        sum(-log(ps[z]), na.rm = TRUE)
+    })
+
+    #print("***************")
+    #print(p_loc_perm)
+    #print(S_values[1:7])
+    #print(S_values[1])
+    #print(table(round(S_values)))
+    others <- tail(S_values, -1)
+    pp <-  sum(others < S_values[[1]]) + sum(others == S_values[[1]])/2  # another assumption here for small discrete distributions.
+    return(list(p = 1 - pp / perm_count, ss = S_values))
+}
+
+
+
+#  NA, NA, ...
+#  NA, NA, ...
+#  NA, NA, ...
+#  NA, NA, NA, ...
+#  NA, NA, NA, ...
+#  NA, NA, NA, ...
+#  NA, NA, NA, NA, NA, ...
+#  NA, NA, NA, NA, NA, ...
+#  8    8   5   2   2
+#
+# Keep NA's at the start for each location
+#' @param series A matrix/data.frame with one row per location in the VF, visit cols
+#' @return List of indexes of last non-NA in a block of visits with same NA count (possibly NULL)
+get_boundaries <- function(series) {
+#print(series)
+#print(series[seq(51, nrow(series)), , drop = FALSE])
+    if (nrow(series) == 52)
+        return(NULL)
+
+        # num NAs for each visit
+    num_NAs <- apply(series[seq(53, nrow(series)), , drop = FALSE], 2, function(rr) sum(is.na(rr)))
+
+    curr_num <- num_NAs[[1]]
+    block_boundaries <- c(1)
+    for (i in seq(2, ncol(series))) {
+#print(paste("visit=", i))
+#print(block_boundaries)
+        if (num_NAs[[i]] == 0)
+            break
+
+            # if last block_b column is all NA's, increment it, else add new b_b
+        n <- length(block_boundaries)
+        if (num_NAs[[i]] == curr_num) {
+            block_boundaries[[n]] <- i
+        } else {
+            block_boundaries <- c(block_boundaries, i)
+            curr_num <- num_NAs[[i]]
+        }
+    }
+    return(block_boundaries)
+}
+
+# Assumes no rows with less than 2 non-NAs
+get_perms4 <- function(series, perm_count, warnings = TRUE) {
+    bb <- get_boundaries(series)
+#print(bb)
+    if (is.null(bb))
+        return(get_perms(ncol(series), perm_count, warnings))
+
+        # @param start Index of visit to start perm - 1
+        # @param end   Index of visit to end perm
+        # @return Perms of (start, end] = 1:(end - start) + start. Resample to get exactly perm_count perms.
+        #                      Keep 1 as 1..n
+    gp <- function(start, end) {
+#print("------gp")
+#print(paste("start=", start, "end=", end, "perm_count=", perm_count))
+        p <- get_perms(end - start, perm_count - 1, warnings = FALSE)
+#print("-p")
+#print(p)
+        l <- lapply(p, function(p) start + p)
+#print("-l")
+#print(l)
+            # keep 1...n as perm 1
+        if (length(l) < perm_count)
+            l <- c(list(l[[1]]), sample(l, perm_count - 1, replace = TRUE))
+#print("-l2")
+#print(l)
+        l
+    }
+
+    perm_blocks <- lapply(seq_along(bb), function(i_bb) {
+        if (i_bb == 1)
+            gp(0, bb[[1]])
+        else
+            gp(bb[[i_bb - 1]], bb[[i_bb]])
+    })
+
+    if (tail(bb, 1) != ncol(series))
+        perm_blocks <- c(perm_blocks, list(gp(tail(bb, 1), ncol(series))))
+#print(perm_blocks)
+#print(unlist(lapply(perm_blocks, length)))
+
+    # combine all perm_blocks
+    res <- perm_blocks[[1]]
+    for (i_pb in seq(2, length(perm_blocks)))
+        res <- lapply(seq_len(perm_count), function(i) c(res[[i]], perm_blocks[[i_pb]][[i]]))
+
+#print(res)
+    return(res)
+}
+
+#' Only use permutations where NAs are at the start
+#' Only use locations with at least 6 visits.
+#' ASSUMES NAs are at the start.
+#
+#' @param series A matrix/data.frame with one row per location in the VF
+#'               and one column per visit (ordered in time so that col1 is earliest
+#'               and the final column the most recent visit)
+#'               Values in the column are dB values (either raw or Total Deviation).
+#' @param threshold Only include PLR p-values less than or equal to this number in S
+#' @param perm_count Number of permutations of series to get p-value for S
+#
+#' @return list containing 
+#'   * p is p-value for statistic S which tracks the false positive rate of calling this series progressing.
+#'   * ss is a vector of S values for each permutation.
+PoPLR4 <- function(series, threshold = 1, perm_count = 5000, warnings = TRUE, arrest = FALSE) {
+        # throw out locations with 6 or less visits
+    z <- apply(series, 1, function(rr) sum(!is.na(rr)) >= 6)
+    series <- series[z, ]
+
+        # throw out any columns that are all NA
+    z <- apply(series, 2, function(cc) any(!is.na(cc)))
+    series <- series[, z]
+
+    if (nrow(series) <= 1) return(NA)
+    if (ncol(series) < 6) return(NA)
+
+        # get permutation vectors for largest n
+    n <- ncol(series)
+    perms <- get_perms4(series, perm_count, warnings)
+    perm_count <- length(perms) - 1  # does not include first 1:n
+
+        # p_loc_perm[loc number, perm_number] == p value
+    p_loc_perm <- matrix(NA, nrow = nrow(series), ncol = perm_count + 1)
+
+        # Now compute all the p-values for each loc in each appropriate permutation
+        # Only include perms for NA rows where no intermittent NAs
+    for (loc in seq_len(nrow(series))) {
+        series_loc <- series[loc, ]
+        ybar <- mean(series_loc, na.rm = TRUE)
+
+        n.loc <- sum(!is.na(series_loc))
+        xs <- seq_len(n.loc)
+        xbar <- mean(xs)
+        xd <- xs - xbar
+        sumXdSq <- sum(xd * xd)
+        sqrtSumXdSq <- sqrt(sumXdSq)
+
+        for (perm in 0:perm_count + 1) {
+            ys <- series_loc[perms[[perm]]]   # this is length n >= n.loc
+
+                # remove leading and trailing NAs and if the result
+                # is not length(n.loc) skip this perm
+            ii <- which(!is.na(ys))
+            a <- head(ii, 1)
+            b <- tail(ii, 1)
+            if (b - a + 1 == n.loc) {
+                ys <- ys[a:b]
+
+                if (arrest && -1 %in% ys) {
+                    ii <- n.loc
+                    while (ii >= 1 && ys[[ii]] == -1)
+                        ii <- ii - 1
+                    if (ii > 1 && all(ys[1:ii] != -1))
+                        p_loc_perm[loc, perm] <- 0.5^(2 + ii)   # {!Red}+ -> {Red}+ could exist if tt=0 with this prob
+                    else
+                        p_loc_perm[loc, perm] <- 1   # {.}*Red{.}* -> {Red}+
+                } else {
+                    yd <- ys - ybar
+
+                    beta <- sum(xd * yd) / sumXdSq
+                    alpha <- ybar - beta * xbar
+                    res <- ys - alpha - beta * xs
+                    sse <- sum((ys - alpha - beta * xs)^2)
+                    if (sse < 1e-10)  { # often == 0 for VF analysis of a small number of points. Also assumes sqrtSumXdSq is not super small.
+                        if (beta >= 0) {
+                            p_loc_perm[loc, perm] <- 1   # t -> Inf  (assuming 0/0 -> Inf)
+                        } else {
+                            p_loc_perm[loc, perm] <- 0   # t -> -Inf
+                        }
+                    } else {
+                        se <- sqrt(sse / (n.loc - 2)) / sqrtSumXdSq
+                        t <- beta / se
+                        p_loc_perm[loc, perm] <- pt(t, n.loc - 2)
+            #cat(res)
+            #cat(sprintf("\nloc=%2s perm=%2s n=%2.0f beta=%+4.2f sse=%5.2f se=%4.2f t=%+5.2f p=%4.2f\n",
+            #      loc, perm, n.loc, beta, sse, se, t, pt(t, n.loc - 2)))
+                    }
+                }
+            }
+        }
+    }
+
+    S_values <- apply(p_loc_perm, 2, function(ps) {
+        z <- ps <= max(min(ps, na.rm = TRUE), threshold)
+        sum(-log(ps[z]), na.rm = TRUE)
+    })
+
+    #print("***************")
+    #print(p_loc_perm)
+    #print(S_values[1:7])
+    #print(S_values[1])
+    #print(table(round(S_values)))
+    others <- tail(S_values, -1)
+    pp <-  sum(others < S_values[[1]]) + sum(others == S_values[[1]])/2  # another assumption here for small discrete distributions.
+    return(list(p = 1 - pp / perm_count, ss = S_values))
 }
 
 #############
 # test
 #############
 #dbs <- round(runif(52, 0, 41))
-#series <- matrix(c(dbs, dbs-1, dbs-2, dbs - 3), ncol = 4)
-#p <- PoPLR(series, perm_count = 5000)
+#series <- matrix(c(dbs, dbs - 1, dbs - 2, dbs - 3), ncol = 4)
+#p <- PoPLR4(series, perm_count = 5000)
 #print(p)
 
-#for (delta in  -1 / c(0.5, 1, 2, 4, 8)) 
+#for (delta in  -1 / c(0.5, 1, 2, 4, 8))
 #for (prog in c(52, 25, 0)) {
 #    cat(sprintf("\n delta = %6.4f num prog = %2s ", delta, prog))
 #    ds <- c(rep(0, length(dbs) - prog), rep(delta, prog))
 #    series <- matrix(c(dbs, dbs + ds, dbs + 2 * ds, dbs + 3 * ds), ncol = 4)
-#    p <- PoPLR(series, perm_count = 5)
+#    p <- PoPLR(series)
 #    cat(sprintf("p = %s\n", p))
 #}
 
@@ -256,3 +564,9 @@ PoPLR <- function(series, threshold = 0.05, perm_count = 5000, warnings = TRUE) 
 #), ncol = 7, byrow = TRUE)
 #for (pcount in c(2, 20, 200, 2000, 5040))
 #    print(paste("PoPLR: ", PoPLR(s, perm_count = pcount)))
+
+#series <- matrix(20, ncol = 10, nrow = 52)
+#PoPLR4(series)
+#series <- matrix(20, ncol = 10, nrow = 53)
+#series[53, 1] <- NA
+#print(PoPLR4(series, perm_count = 500))
