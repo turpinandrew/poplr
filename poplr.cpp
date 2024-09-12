@@ -33,6 +33,7 @@
 #include <fstream>
 #include <boost/math/distributions/students_t.hpp>
 #include <boost/container_hash/hash.hpp>
+#include "permutation.hpp"
 //#include <omp.h>
 
 typedef std::unordered_set<std::vector<int>, boost::hash<std::vector<int>>> PermSet;
@@ -361,8 +362,72 @@ std::vector<std::vector<double>> readCSV(const std::string& filename) {
     file.close();
     return data;
 }
+    
+std::vector<Eye> read_json(const std::string& filename) {
+    FILE *file = fopen(filename.c_str(), "r");
+
+    std::vector<Eye> eyes;
+
+    #define ADD_NUM {\
+        eyes[eye][ser][loc].push_back(num); \
+        num = 0;\
+        tens = 1; \
+    }
+
+    int ch;
+    int state = 0;  // 0 = null ; 1 = whole data; 2 = in eye ; 3 = in rep ; 4 = in row
+    int eye, ser, loc;
+    double num = 0;
+    double tens = 1;
+    while ((ch = getc(file)) != EOF) {
+        if (ch == '[') {
+            switch (state) { 
+            case 0: { state++; eye = -1; break; }
+            case 1: { state++; eye++; eyes.push_back(Eye()); ser = -1; break; }
+            case 2: { state++; ser++; eyes[eye].push_back(Series()); loc = -1; break; }
+            case 3: { state++; loc++; eyes[eye][ser].push_back(Location()); break; }
+            default: {
+                std::cout << "parse ERROR [" << std::endl;
+                return(std::vector<Eye>());
+            }};
+        } else if (ch == ']') {
+            switch (state) { 
+            case 0: { std::cout << "parse ERROR [" << std::endl; break;}
+            case 1: { state--; break; }
+            case 2: { state--; break; }
+            case 3: { state--; break; }
+            case 4: { state--; ADD_NUM; break; }
+            };
+        } else if (ch == ',' && state == 4) {
+            ADD_NUM;
+        } else if (ch == ',') {
+            continue;
+        } else if (ch == ' ' || ch == '\n') {
+            continue;
+        } else if (ch == '.') {
+            tens = 0.1;
+        } else {
+            if (tens < 1) {
+                num += ((double)(ch - '0')) * tens;
+                tens /= 10.0;
+            } else
+                num = num * 10.0 + (double)(ch - '0');
+        }
+    }
+
+    return eyes;
+}
+
 
 int main(int argc, char *argv[]) {
+    
+    PermutationIterator pi(4, 4);
+    while (pi.hasNext()) {
+        std::cout << "p ";
+        for (int x : pi.next())
+            std::cout << x << " ";
+        std::cout << std::endl;
+    }
     
     // Tests
     /*
@@ -402,63 +467,14 @@ int main(int argc, char *argv[]) {
     std::cout << PoPLR4(tests[2], tests[2].size(), tests[2][1].size(), 5000) << std::endl;
     */
 
+
+    return(-1);
     if (argc < 2) {
         std::cerr << "Usage: " << argv[0] << " <filename.json>" << std::endl;
         return 1;
     }
 
-    FILE *file = fopen(argv[1], "r");
-    //Json::Value data;
-    //file >> data;
-
-    std::vector<Eye> eyes;
-
-    #define ADD_NUM {\
-        eyes[eye][ser][loc].push_back(num); \
-        num = 0;\
-        tens = 1; \
-    }
-
-    int ch;
-    int state = 0;  // 0 = null ; 1 = whole data; 2 = in eye ; 3 = in rep ; 4 = in row
-    int eye, ser, loc;
-    double num = 0;
-    double tens = 1;
-    while ((ch = getc(file)) != EOF) {
-        if (ch == '[') {
-            switch (state) { 
-            case 0: { state++; eye = -1; break; }
-            case 1: { state++; eye++; eyes.push_back(Eye()); ser = -1; break; }
-            case 2: { state++; ser++; eyes[eye].push_back(Series()); loc = -1; break; }
-            case 3: { state++; loc++; eyes[eye][ser].push_back(Location()); break; }
-            default: {
-                std::cout << "parse ERROR [" << std::endl;
-                return(-1);
-            }};
-        } else if (ch == ']') {
-            switch (state) { 
-            case 0: { std::cout << "parse ERROR [" << std::endl; break;}
-            case 1: { state--; break; }
-            case 2: { state--; break; }
-            case 3: { state--; break; }
-            case 4: { state--; ADD_NUM; break; }
-            };
-        } else if (ch == ',' && state == 4) {
-            ADD_NUM;
-        } else if (ch == ',') {
-            continue;
-        } else if (ch == ' ' || ch == '\n') {
-            continue;
-        } else if (ch == '.') {
-            tens = 0.1;
-        } else {
-            if (tens < 1) {
-                num += ((double)(ch - '0')) * tens;
-                tens /= 10.0;
-            } else
-                num = num * 10.0 + (double)(ch - '0');
-        }
-    }
+    std::vector<Eye> eyes = read_json(argv[1]);
 
     std::vector<std::vector<std::vector<double>>> results(126, 
          std::vector<std::vector<double>>(13, std::vector<double>(100)));
