@@ -36,7 +36,7 @@
 #include "permutation.hpp"
 //#include <omp.h>
 
-typedef std::unordered_set<std::vector<int>, boost::hash<std::vector<int>>> PermSet;
+typedef std::vector<std::vector<int>> PermSet;
 
 typedef std::vector<double> Location;   // number of visits long
 typedef std::vector<Location> Series;   // number of locations long
@@ -61,31 +61,10 @@ void print(const std::string& name, const std::vector<std::vector<T>>& vv) {
     std::cout << std::endl;
 }
 
-// Function to get perm_count permutations of 1..n
-// Do include "first" perm 1..n
-PermSet get_perms(int n, int perm_count) {
-    if (perm_count > std::tgamma(n + 1))
-        perm_count = std::tgamma(n + 1);
 
-    std::unordered_set<std::vector<int>, boost::hash<std::vector<int>>> perms;
-
-    std::random_device rd;
-    std::mt19937 g{ rd() };
-
-    std::vector<int> base_perm(n);
-    std::iota(base_perm.begin(), base_perm.end(), 1);
-
-    perms.insert(base_perm);
-    while (perms.size() < perm_count) {
-        std::shuffle(base_perm.begin(), base_perm.end(), g);
-        perms.insert(base_perm);
-    }
-
-    return perms;
-}
-
-// Function to get the boundaries of NA blocks
-std::vector<int> get_boundaries(const std::vector<std::vector<double>>& series) {
+// @param series A matrix of dB values with `num_locations` rows and `num_visits` columns.
+// @return The right boundaries of NaN blocks
+std::vector<int> get_boundaries(const Series& series) {
     int num_visits = series[0].size();
     std::vector<int> num_NAs(num_visits, 0);
 
@@ -125,27 +104,38 @@ std::vector<int> get_boundaries(const std::vector<std::vector<double>>& series) 
  @param end   Index of visit to end perm
  @return Perms of (start, end] = 1:(end - start) + start. Resample to get exactly perm_count perms.
 */
-std::vector<std::vector<int>> gp(int start, int end, int perm_count) {
-    PermSet p = get_perms(end - start, perm_count);
-
-    std::vector<std::vector<int>> pp(p.begin(), p.end());
-    for (int i = 0; i < pp.size(); i++)
-        for (int j = 0; j < pp[i].size(); j++)
-            pp[i][j] += start;
-
-    while (pp.size() < perm_count) {
-        pp.push_back(pp[rand() % pp.size()]);
+PermSet gp(int start, int end, int perm_count) {
+    if (end - start == 1) {
+        PermSet perms;
+        for (int i = 0; i < perm_count; i++)
+            perms.push_back({end});
+        return perms;
     }
 
-    return pp;
+    PermutationIterator permIt = PermutationIterator(end - start, perm_count);
+
+//std::cout << "start " << start << " end " << end << " perm_count " << perm_count << std::endl;
+    PermSet perms;
+    while (permIt.hasNext() && perms.size() < perm_count) {
+        std::vector<int> p = permIt.next();
+        for (int i = 0; i < p.size(); i++)
+            p[i] += start;
+        perms.push_back(p);
+    }
+
+        // If the number of permutations is less than perm_count, resample
+    while (perms.size() < perm_count)
+        perms.push_back(perms[rand() % perms.size()]);
+
+    return perms;
 };
 
 // Function to get permutations based on NA block boundaries
 // Perm 1...n should be the first element in returned vector
-std::vector<std::vector<int>> get_perms4(const std::vector<std::vector<double>>& series, int perm_count) {
+PermSet get_perms4(const Series& series, int perm_count) {
     auto n = series[0].size();
 
-    std::vector<std::vector<int>> res;
+    PermSet res;
 
         // Look for block boundaries defined by NaNs
     std::vector<int> bb = get_boundaries(series);
@@ -172,18 +162,11 @@ std::vector<std::vector<int>> get_perms4(const std::vector<std::vector<double>>&
         }
     }
 
-        // Find the 'first' perm 1..n and move it to the front
-    auto v = std::vector<int>(n);
-    std::iota(v.begin(), v.end(), 1);
-    auto it = std::find(res.begin(), res.end(), v);
-    assert (it != res.end()); 
-    iter_swap(res.begin(), it);
-
     return res;
 }
 
 // @return -1 For no valid data (too few visits or locations)
-double PoPLR4(Series& series, int num_locations, int num_visits, int perm_count) {
+double PoPLR4(Series series, int num_locations, int num_visits, int perm_count) {
     if (perm_count > std::tgamma(num_visits + 1))
         perm_count = std::tgamma(num_visits + 1);
 
@@ -205,7 +188,7 @@ double PoPLR4(Series& series, int num_locations, int num_visits, int perm_count)
     if (num_locations <= 1) return -1;
 
               // Prune each location to num_visits entries
-    for (int loc = 0; loc < num_locations;)
+    for (int loc = 0; loc < num_locations; loc++)
         series[loc].resize(num_visits);
 
         // skip over any columns at the start that are all NA
@@ -222,8 +205,8 @@ double PoPLR4(Series& series, int num_locations, int num_visits, int perm_count)
     if (min_visit_index >= num_visits) return -1;
 
         // get permutation vectors for largest n
-    std::vector<std::vector<int>> perms = get_perms4(series, perm_count - 1);
-    perm_count = perms.size() - 1;  // does not include first 1:n
+    PermSet perms = get_perms4(series, perm_count);
+    perm_count = perms.size();  // does not include first 1:n
 
         // work out the x and ybar values for each location
     std::vector<int> n(num_locations);
@@ -270,7 +253,7 @@ double PoPLR4(Series& series, int num_locations, int num_visits, int perm_count)
     // Now compute all the p-values for each loc in each appropriate permutation
     std::vector<double> S(perm_count);
     std::vector<double> p_vals(num_locations);
-    for (int perm = 0; perm <= perm_count; perm++) {
+    for (int perm = 0; perm < perm_count; perm++) {
 //print("perm:", perms[perm]);
 
 //std::cout << "num_locations " << num_locations << std::endl;
@@ -380,6 +363,7 @@ std::vector<Eye> read_json(const std::string& filename) {
     double num = 0;
     double tens = 1;
     while ((ch = getc(file)) != EOF) {
+//std::cout << (char)ch << " " << "st " << state << " e " << eye << " s " << ser << " l " << loc << std::endl;
         if (ch == '[') {
             switch (state) { 
             case 0: { state++; eye = -1; break; }
@@ -421,16 +405,18 @@ std::vector<Eye> read_json(const std::string& filename) {
 
 int main(int argc, char *argv[]) {
     
-    PermutationIterator pi(4, 4);
+    
+    // Tests
+    /*
+
+    PermutationIterator pi(12, 16);
     while (pi.hasNext()) {
         std::cout << "p ";
         for (int x : pi.next())
             std::cout << x << " ";
         std::cout << std::endl;
     }
-    
-    // Tests
-    /*
+
     std::vector<std::vector<std::vector<double>>> tests = {
        {{  1,   2, 3},
         {  1,   2, 3},
@@ -451,16 +437,23 @@ int main(int argc, char *argv[]) {
 
     };
 
-    for (std::vector<std::vector<double>> series : tests) {
-        std::vector<std::vector<int>> perms = get_perms4(series, 10);
 
-        // Print permutations
+    for (std::vector<std::vector<double>> series : tests) {
+            // Print input
         std::cout << "************" << std::endl;
-        for (const auto& perm : perms) {
-            for (int val : perm) {
+        for (std::vector<double> loc : series) {
+            for (double val : loc) {
                 std::cout << val << " ";
             }
             std::cout << std::endl;
+        }
+
+        std::vector<std::vector<int>> perms = get_perms4(series, 5000);
+
+            // Print permutations
+        std::cout << "-------------" << std::endl;
+        for (const auto& perm : perms) {
+            print("", perm);
         }
     }
 
@@ -468,7 +461,6 @@ int main(int argc, char *argv[]) {
     */
 
 
-    return(-1);
     if (argc < 2) {
         std::cerr << "Usage: " << argv[0] << " <filename.json>" << std::endl;
         return 1;
@@ -480,18 +472,17 @@ int main(int argc, char *argv[]) {
          std::vector<std::vector<double>>(13, std::vector<double>(100)));
  
      #pragma omp parallel for
-     //for (int i_eye = 0 ; i_eye < eyes.size(); i_eye++) {
-     //for (int i_rep = 0 ; i_rep < eyes[i_eye].size(); i_rep++) {
-     //for (int visit = eyes[i_eye][i_rep][0].size(); visit >= 6; visit--) {
-     for (int i_eye = 0 ; i_eye < 1; i_eye++) {
-     for (int i_rep = 0 ; i_rep < 1; i_rep++) {
-     for (int visit = eyes[i_eye][i_rep][0].size(); visit >= 12; visit--) {
-         results[i_eye][visit][i_rep] = PoPLR4(eyes[i_eye][i_rep], eyes[i_eye][i_rep].size(), visit, 5000);
-     }}}
+     for (int i_eye = 0 ; i_eye < eyes.size(); i_eye++) {
+        std::cout << "eye " << i_eye << std::endl;
+        for (int i_rep = 0 ; i_rep < eyes[i_eye].size(); i_rep++) {
+            for (int visit = eyes[i_eye][i_rep][0].size(); visit >= 6; visit--) 
+                results[i_eye][visit][i_rep] = PoPLR4(eyes[i_eye][i_rep], eyes[i_eye][i_rep].size(), visit, 5000);
+        }
+     }
 
      for (int i_eye = 0 ; i_eye < eyes.size(); i_eye++) {
      for (int i_rep = 0 ; i_rep < eyes[i_eye].size(); i_rep++) {
-     for (int visit = eyes[i_eye][i_rep][0].size(); visit >= 6; visit--) {
+     for (int visit = 6 ; visit <= eyes[i_eye][i_rep][0].size(); visit++) {
          std::cout << i_eye << "," << i_rep << "," << visit << ",";
          std::cout << results[i_eye][visit][i_rep];
          std::cout << std::endl;

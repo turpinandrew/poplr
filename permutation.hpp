@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <random>
 #include <unordered_set>
+#include <set>
 #include <boost/container_hash/hash.hpp>
+#include <chrono>
 
 // Base class for permutation iterators
 class PermutationBase {
@@ -19,39 +21,63 @@ protected:
 };
 
 // Generate count random permutations of 1..n
+// Always have 1..n as the first (not so random)
 class RandomPermsIterator: public PermutationBase {
 public:
-    RandomPermsIterator(int n, int count) : nums(n), PermutationBase(n, count) {
-        for (int i = 0; i < n; i++)
-            nums[i] = i + 1;
-
-        perms.insert(nums);
+    RandomPermsIterator(int n, int count) : PermutationBase(n, count) {
+        std::srand(std::chrono::system_clock::now().time_since_epoch().count());
+        ks.insert(0);
+        while (ks.size() < count)
+            ks.insert(rand() % fact[n]);
+        kIt = ks.begin();
     }
     using PermutationBase::PermutationBase;
 
     bool hasNext() const override {
-        return count > 0;
+        return kIt != ks.end();
     }
 
     std::vector<int> next() override {
-        if (count == 0) 
+        if (kIt == ks.end())
             return std::vector<int>();
 
-        bool inserted;
-        std::vector<int> b = nums;
-        do {
-            std::srand(std::time(0));
-            std::shuffle(nums.begin(), nums.end(), std::default_random_engine(std::rand()));
-        } while (perms.count(nums));
-        perms.insert(nums);
-
-        count--;
-
-        return b;
+        int k = *kIt++;
+        return getPermutation(n, k);
     }
+
+    // Get the k'th permutation of 1..n (k >= 0)
+    // Adaption of  Stackoverflow answer: Aug 21, 2014 at 21:33 Ismael EL ATIFI
+    std::vector<int> getPermutation(int n, long k) {
+        std::set<int> nums;
+        for(int i = 1 ; i <= n ; i++)
+            nums.insert(i);
+        
+        std::vector<int> result;
+
+        while (nums.size() > 1) {
+            long sizeGroup = fact[nums.size() - 1];
+            
+            long q = k / sizeGroup;
+            long r = k - q * sizeGroup;
+
+            int val = *std::next(nums.begin(), q);
+            
+            result.push_back(val);  
+            nums.erase(val);
+
+            k = r;
+        }
+
+        result.push_back(*nums.begin());  // the final digit remaining in nums
+        
+        return result;
+    }
+
 private:
-    std::vector<int> nums;
-    std::unordered_set<std::vector<int>, boost::hash<std::vector<int>>> perms;
+    long fact[15] = {1,1,2,6,24,120,720,5040,40320,362880, 3628800, 39916800, 479001600, 6227020800, 87178291200};
+
+    std::unordered_set<int> ks;
+    std::unordered_set<int>::iterator kIt = ks.begin();
 };
 
 // Heap's algorithm for generating all permutations of 1..n
