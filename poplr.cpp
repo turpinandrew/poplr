@@ -165,50 +165,81 @@ PermSet get_perms4(const Series& series, int perm_count) {
     return res;
 }
 
-// @return -1 For no valid data (too few visits or locations)
-double PoPLR4(Series series, int num_locations, int num_visits, int perm_count) {
-    if (perm_count > std::tgamma(num_visits + 1))
-        perm_count = std::tgamma(num_visits + 1);
+#define MIN_VISITS 6
+/*
+    Resize matrix to have num_locations rows and num_visits columns.
+    Ignore any data before a column of NANs. (presumably at the start)
+    Remove locations with less than MIN_VISITS in their row.
 
-        // Throw out locations with 5 or less visits
+    @param series A matrix of dB values with at least `num_locations` rows and `num_visits` columns.
+    @return Updated series matrix or empty Series if cannot meet requirements.
+*/
+Series preProcess(Series series, int num_locations, int num_visits) {
+    if (num_visits < MIN_VISITS || num_locations < 2) 
+        return Series();
+
+    if (series.size() < num_locations || series[0].size() < num_visits)
+        return Series();
+
+    int min_visit_index = 0;
+
+        // Skip over any columns at the start that are all NA to determine min_visit_index
+    for (int visit = 0; visit < num_visits; visit++) {
+        int loc;
+        for (loc = 0; loc < num_locations; loc++)
+            if (!std::isnan(series[loc][visit]))
+                break;
+        if (loc == num_locations)  // all locations have this visit as NAN
+            min_visit_index = visit + 1;
+    }
+
+    if (num_visits - min_visit_index + 1 < MIN_VISITS) 
+        return Series();
+
+        // Throw out locations with less than MIN_VISITS from min_visit_index
     for (int loc = 0; loc < num_locations;) {
-        int na_count = 0;
-        for (int visit = 0; visit < num_visits; visit++)
+        int nan_count = 0;
+        for (int visit = min_visit_index; visit < min_visit_index + num_visits; visit++)
             if (std::isnan(series[loc][visit]))
-                na_count++;
-        if (num_visits - na_count < 6) {
+                nan_count++;
+        if (num_visits - nan_count < MIN_VISITS) {
                 // swap last location up to here and shrink num_locations
-            for (int visit = 0; visit < num_visits; visit++)
+            for (int visit = min_visit_index; visit < min_visit_index + num_visits; visit++)
                 series[loc][visit] = series[num_locations - 1][visit];
             num_locations--;
         } else
             loc++;
     }
 
-    if (num_locations <= 1) return -1;
+    if (num_locations < 2) 
+        return Series();
 
-              // Prune each location to num_visits entries
-    for (int loc = 0; loc < num_locations; loc++)
+        // Prune each location to num_visits from min_visit_index
+    for (int loc = 0; loc < num_locations; loc++) {
+        if (min_visit_index > 0)
+            series[loc].erase(series[loc].begin(), series[loc].begin() + min_visit_index);
         series[loc].resize(num_visits);
-
-        // skip over any columns at the start that are all NA
-    int min_visit_index = 0;
-    for (int visit = 0; visit < num_visits; visit++) {
-        int loc;
-        for (loc = 0; loc < num_locations; loc++)
-            if (!std::isnan(series[loc][visit]))
-                break;
-        if (loc == num_locations)
-            min_visit_index = visit + 1;
     }
 
-    if (min_visit_index >= num_visits) return -1;
+    return series;
+}
+
+/*
+    @param series A matrix of dB values; rows are locations, columns are visits
+    @return -1 For no valid data (too few visits or locations) else estimated probability of stability
+*/
+double PoPLR4(Series series, int perm_count) {
+    int num_locations = series.size();
+    int num_visits = series[0].size();
+
+    if (perm_count > std::tgamma(num_visits + 1))
+        perm_count = std::tgamma(num_visits + 1);
 
         // get permutation vectors for largest n
     PermSet perms = get_perms4(series, perm_count);
     perm_count = perms.size();  // does not include first 1:n
 
-        // work out the x and ybar values for each location
+        // work out the x*, ybar, yds, y_skip values for each location
     std::vector<int> n(num_locations);
     std::vector<double> xbar(num_locations);
     std::vector<double> sumXdSq(num_locations);
@@ -346,15 +377,36 @@ std::vector<std::vector<double>> readCSV(const std::string& filename) {
     return data;
 }
     
+/*
+Read in JSON file that has series of VFs. Format is
+[                   # whole lot
+  [                   # begin eye 1
+    [                   # begin repeat 1
+      [20,19,18],         # location 1  (length "num_visits")
+      [20,19,18]          # location 2
+    ],
+    [
+        [21,19,18],     # begin repeat 2
+        [21,19,18]        # location 1
+    ]                     # location 2
+  ],
+  [ eye 2...]
+]
+
+Hand crafted parser with simple state.
+Ignores ' ' and '\n'.
+Assumes no negative numbers.
+*/
 std::vector<Eye> read_json(const std::string& filename) {
     FILE *file = fopen(filename.c_str(), "r");
 
     std::vector<Eye> eyes;
 
     #define ADD_NUM {\
-        eyes[eye][ser][loc].push_back(num); \
+        eyes[eye][ser][loc].push_back(sign * num); \
         num = 0;\
-        tens = 1; \
+        tens = 1;\
+        sign = +1;\
     }
 
     int ch;
@@ -362,6 +414,7 @@ std::vector<Eye> read_json(const std::string& filename) {
     int eye, ser, loc;
     double num = 0;
     double tens = 1;
+    double sign = +1;
     while ((ch = getc(file)) != EOF) {
 //std::cout << (char)ch << " " << "st " << state << " e " << eye << " s " << ser << " l " << loc << std::endl;
         if (ch == '[') {
@@ -382,6 +435,8 @@ std::vector<Eye> read_json(const std::string& filename) {
             case 3: { state--; break; }
             case 4: { state--; ADD_NUM; break; }
             };
+        } else if (ch == '-' && state == 4) {
+            sign = -1;
         } else if (ch == ',' && state == 4) {
             ADD_NUM;
         } else if (ch == ',') {
@@ -404,8 +459,6 @@ std::vector<Eye> read_json(const std::string& filename) {
 
 
 int main(int argc, char *argv[]) {
-    
-    
     // Tests
     /*
 
@@ -469,24 +522,24 @@ int main(int argc, char *argv[]) {
     std::vector<Eye> eyes = read_json(argv[1]);
 
     std::vector<std::vector<std::vector<double>>> results(126, 
-         std::vector<std::vector<double>>(13, std::vector<double>(100)));
- 
+         std::vector<std::vector<double>>(13, std::vector<double>(100, -1)));
+
      #pragma omp parallel for
      for (int i_eye = 0 ; i_eye < eyes.size(); i_eye++) {
         std::cout << "eye " << i_eye << std::endl;
         for (int i_rep = 0 ; i_rep < eyes[i_eye].size(); i_rep++) {
-            for (int visit = eyes[i_eye][i_rep][0].size(); visit >= 6; visit--) 
-                results[i_eye][visit][i_rep] = PoPLR4(eyes[i_eye][i_rep], eyes[i_eye][i_rep].size(), visit, 5000);
+            for (int visit = eyes[i_eye][i_rep][0].size(); visit >= 6; visit--) {
+                Series series = preProcess(eyes[i_eye][i_rep], eyes[i_eye][i_rep].size(), visit);
+                double res;
+                if (series.size() > 0)
+                    res = PoPLR4(series, 5000);
+                else
+                    res = -1;
+                std::cout << i_eye << "," << i_rep << "," << visit << "," << res << std::endl;
+            }
         }
      }
 
-     for (int i_eye = 0 ; i_eye < eyes.size(); i_eye++) {
-     for (int i_rep = 0 ; i_rep < eyes[i_eye].size(); i_rep++) {
-     for (int visit = 6 ; visit <= eyes[i_eye][i_rep][0].size(); visit++) {
-         std::cout << i_eye << "," << i_rep << "," << visit << ",";
-         std::cout << results[i_eye][visit][i_rep];
-         std::cout << std::endl;
-     }}}
     
     return 0;
 }
