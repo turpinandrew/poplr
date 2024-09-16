@@ -2,19 +2,42 @@
 #include <vector>
 #include <algorithm>
 #include <random>
-#include <unordered_set>
 #include <set>
 #include <boost/container_hash/hash.hpp>
 #include <chrono>
 
+using namespace std;
+
 // Base class for permutation iterators
+// These are infinite iterators, so have no end. 
+// If they run out of permutations, then they just cycle back to the start.
 class PermutationBase {
 public:
-    PermutationBase() { this->n = 0 ; this->count = 0; }
-    PermutationBase(int n) { this->n = n ; this->count = n; }
-    PermutationBase(int n, int count) { this->n = n ; this->count = count; }
-    virtual bool hasNext() const = 0 ;
-    virtual std::vector<int> next() = 0;
+    /*
+        If boundaries are specified as {b1, b2, .., bm} then the permutation of 1..n
+        is partitioned into m + 1 blocks: [1, b1], (b1, b2], .., (bm, n]
+        
+        `count` is then restricted to be no more than max((b[i] - b[i-1])!)
+
+        @param boundaries Right boundaries of NaN blocks (start-1 indexed)
+    */
+    PermutationBase() { this->count = 0 ; this->n = 0; }
+    PermutationBase(int n) {this->count = fact()[n] ; this->n = n; }
+    PermutationBase(int n, long count) {this->count = count ; this->n = n; }
+
+    virtual vector<int> next() = 0;
+
+        // based on dyp Dec 31, 2020 at 11:32
+        // https://stackoverflow.com/questions/65519616/populating-a-constexpr-array-using-c17
+    static constexpr std::array<long, 15> fact() {
+        std::array<long, 15> a{1};
+        for (auto i = 1; i < a.size(); ++i) {
+            a[i] = i * a[i - 1];
+        }
+        return a;
+    }
+
+    virtual ~PermutationBase() = default;
 
 protected:
     int n, count;
@@ -22,40 +45,35 @@ protected:
 
 // Generate count random permutations of 1..n
 // Always have 1..n as the first (not so random)
+// Does not allow for infinite iteration; returns {} after count iterations.
 class RandomPermsIterator: public PermutationBase {
 public:
-    RandomPermsIterator(int n, int count) : PermutationBase(n, count) {
-        std::srand(std::chrono::system_clock::now().time_since_epoch().count());
-        ks.insert(0);
-        while (ks.size() < count)
-            ks.insert(rand() % fact[n]);
-        kIt = ks.begin();
+    RandomPermsIterator(int n, long count) : PermutationBase(n, count) {
+        assert(count <= fact()[n]);
+        srand(chrono::system_clock::now().time_since_epoch().count());
+        uniqueKs.insert(0);
+        while (uniqueKs.size() < count)
+            uniqueKs.insert(rand() % fact()[n]);
+        kIt = uniqueKs.begin();
     }
     using PermutationBase::PermutationBase;
 
-    bool hasNext() const override {
-        return kIt != ks.end();
-    }
-
-    std::vector<int> next() override {
-        if (kIt == ks.end())
-            return std::vector<int>();
-
+    vector<int> next() override {
         int k = *kIt++;
         return getPermutation(n, k);
     }
 
     // Get the k'th permutation of 1..n (k >= 0)
     // Adaption of  Stackoverflow answer: Aug 21, 2014 at 21:33 Ismael EL ATIFI
-    std::vector<int> getPermutation(int n, long k) {
-        std::set<int> nums;
+    vector<int> getPermutation(int n, long k) {
+        set<int> nums;
         for(int i = 1 ; i <= n ; i++)
             nums.insert(i);
         
-        std::vector<int> result;
+        vector<int> result;
 
         while (nums.size() > 1) {
-            long sizeGroup = fact[nums.size() - 1];
+            long sizeGroup = fact()[nums.size() - 1];
             
             long q = k / sizeGroup;
             long r = k - q * sizeGroup;
@@ -74,17 +92,20 @@ public:
     }
 
 private:
-    long fact[15] = {1,1,2,6,24,120,720,5040,40320,362880, 3628800, 39916800, 479001600, 6227020800, 87178291200};
-
-    std::unordered_set<int> ks;
-    std::unordered_set<int>::iterator kIt = ks.begin();
+    set<int> uniqueKs;
+    set<int>::iterator kIt;
 };
 
 // Heap's algorithm for generating all permutations of 1..n
 // adapted from Wikipedia as an iterator
+// Allows for infinite iteration
 class AllPermsIterator: public PermutationBase {
 public:
-    AllPermsIterator(int n) : A(n), c(n), PermutationBase(n) {
+    AllPermsIterator(int n) : A(n), c(n) {
+        setup(n);
+    }
+
+    void setup(int n) {
         for (int j = 0; j < n; j++)
             A[j] = j + 1;
 
@@ -93,24 +114,23 @@ public:
 
         i = 1; 
     }
-    using PermutationBase::PermutationBase;
 
-    std::vector<int> next() override {
-        if (i == n)
-            return std::vector<int>();
+    vector<int> next() override {
+        if (i == A.size())
+            setup(A.size());    // allow for infinite iteration
 
-        std::vector<int> output = A;
+        vector<int> output = A;
 
-        while (c[i] >= i && i < n) {
+        while (c[i] >= i && i < A.size()) {
             c[i] = 0;
             i++;
         }
 
-        if (i < n) {
+        if (i < A.size()) {
             if (i % 2 == 0)
-                std::swap(A[0], A[i]);
+                swap(A[0], A[i]);
             else
-                std::swap(A[c[i]], A[i]);
+                swap(A[c[i]], A[i]);
             c[i]++;
             i = 1;
         }
@@ -118,35 +138,99 @@ public:
         return output;
     }
 
-    bool hasNext() const override { return i < n; }
-    
 private:
-    std::vector<int> A;
-    std::vector<int> c;
+    vector<int> A;
+    vector<int> c;
     int i;
-    std::vector<int> output;
+    vector<int> output;
 };
 
-// Iterator for all permutations of 1..n
-// Chooses correct iterator based on count relative to n
+/* 
+   Iterator over permutations of 1..n where this sequence is possibly 
+   partitioned into m blocks: [1, b1], (b1, b2], .., (bm-1, bm = n].
+   Chooses correct iterator for each partition defined by boundaries
+   (ie AllPermsIterator or RandomPermsIterator)
+
+*/
 class PermutationIterator {
 public:
-    PermutationIterator(int n, int count) {
-        if (count >= std::tgamma(n + 1)) {
-            api = AllPermsIterator(n);
-            it = &api;
-        } else {
-            rpi = RandomPermsIterator(n, count);
-            it = &rpi;
+        /*
+            If boundaries are specified as {b1, b2, .., bm} then the 
+            permutation of 1..bm is partitioned 
+            into m blocks: [1, b1], (b1, b2], .., (bm-1, bm]
+            
+            `count` is then restricted to be no more than max((b[i] - b[i-1])!)
+
+            @param boundaries Right boundaries of NaN blocks (1-based)
+        */
+    PermutationIterator(long count, vector<int>& boundaries) {
+        if (boundaries.size() == 1) {
+            setup(count, boundaries[0]);
+            return;
+        }
+
+        this->boundaries = boundaries ; 
+        
+        int max_partition_width = 0;
+        for (int i = 0; i < boundaries.size(); i++) {
+            int partition_width = boundaries[i] - (i == 0 ? 0 : boundaries[i - 1]);
+            max_partition_width = max(max_partition_width, partition_width);
+        }
+
+        this->count = min(count, PermutationBase::fact()[max_partition_width]); 
+
+        for (int i = 0; i < boundaries.size(); i++) {
+            int partition_width = boundaries[i] - (i == 0 ? 0 : boundaries[i - 1]);
+            int n = PermutationBase::fact()[partition_width];
+            if (count >= n)
+                iterators.push_back(new AllPermsIterator(partition_width));
+            else {
+                iterators.push_back(new RandomPermsIterator(partition_width, count));
+            }
         }
     }
 
-    bool hasNext() const {return it->hasNext();}
+        // No boundaries specified, just use 1..n
+    PermutationIterator(long count, int n) { setup(count, n); }
 
-    std::vector<int> next() const {return it->next();}
+        // No count specified, just use n! of 1..n
+    PermutationIterator(int n) { setup(PermutationBase::fact()[n], n); }
+
+        // No partitions, just sample 1..n!
+    void setup(long count, int n) {
+        this->count = count;
+
+        if (count >= PermutationBase::fact()[n])
+            iterators.push_back(new AllPermsIterator(n));
+        else
+            iterators.push_back(new RandomPermsIterator(n, count));
+    }
+
+    bool hasNext() const {return count > 0;}
+
+    // Simply concatenate the next permutation from each partition
+    // but add boundary[i-1] to each value in partition i
+    vector<int> next() {
+        vector<int> result;
+        for (int i = 0; i < iterators.size(); i++) {
+            vector<int> partition_perm = iterators[i]->next();
+            for (int v : partition_perm)
+                result.push_back((i == 0 ? 0 : boundaries[i-1]) + v);
+        }
+
+        count--;
+
+        return result;
+    }
+
+    ~PermutationIterator() {
+        for (PermutationBase *p : iterators)
+            delete p;
+    }
 
 private:
-    PermutationBase *it;
-    AllPermsIterator api;
-    RandomPermsIterator rpi;
+    long count;
+    vector<int> boundaries; // right boundaries of NaN blocks
+
+    vector<PermutationBase *> iterators;
 };

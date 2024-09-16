@@ -36,13 +36,11 @@
 #include "permutation.hpp"
 //#include <omp.h>
 
-typedef std::vector<std::vector<int>> PermSet;
-
 typedef std::vector<double> Location;   // number of visits long
 typedef std::vector<Location> Series;   // number of locations long
 typedef std::vector<Series> Eye;
 
-    // Utility print helpers
+    // Utility print helpers for debugging
 template<typename T>
 void print(const std::string& name, const std::vector<T>& v) {
     std::cout << name << ": ";
@@ -61,14 +59,13 @@ void print(const std::string& name, const std::vector<std::vector<T>>& vv) {
     std::cout << std::endl;
 }
 
-
 // @param series A matrix of dB values with `num_locations` rows and `num_visits` columns.
-// @return The right boundaries of NaN blocks
+// @return The right boundaries of NaN blocks. Must end in num_visits.
 std::vector<int> get_boundaries(const Series& series) {
     int num_visits = series[0].size();
-    std::vector<int> num_NAs(num_visits, 0);
 
     // Count NAs for each visit
+    std::vector<int> num_NAs(num_visits, 0);
     for (int visit = 0; visit < num_visits; ++visit) {
         for (const auto& loc : series) {
             if (std::isnan(loc[visit])) {
@@ -77,92 +74,30 @@ std::vector<int> get_boundaries(const Series& series) {
         }
     }
 
-    if (std::all_of(num_NAs.begin(), num_NAs.end(), [](int n) { return n == 0; })) {
-        return {};
-    }
+        // invariant: block_boundaries[-1] has curr_num NAs to the left
+    std::vector<int> block_boundaries;
+    if (num_NAs[0] > 0) {
+        int curr_num = num_NAs[0];
+        block_boundaries.push_back(1);
 
-    int curr_num = num_NAs[0];
-    std::vector<int> block_boundaries = {1};
-    for (int i = 1; i < num_visits; i++) {
-        if (num_NAs[i] == 0) {
-            break;
-        }
+        for (int i = 1; i < num_visits; i++) {
+            if (num_NAs[i] == 0) {
+                break;
+            }
 
-        int n = block_boundaries.size();
-        if (num_NAs[i] == curr_num) {
-            block_boundaries[n - 1] = i + 1;
-        } else {
-            block_boundaries.push_back(i + 1);
-            curr_num = num_NAs[i];
-        }
-    }
-    return block_boundaries;
-}
-
-/*
- @param start Index of visit to start perm - 1
- @param end   Index of visit to end perm
- @return Perms of (start, end] = 1:(end - start) + start. Resample to get exactly perm_count perms.
-*/
-PermSet gp(int start, int end, int perm_count) {
-    if (end - start == 1) {
-        PermSet perms;
-        for (int i = 0; i < perm_count; i++)
-            perms.push_back({end});
-        return perms;
-    }
-
-    PermutationIterator permIt = PermutationIterator(end - start, perm_count);
-
-//std::cout << "start " << start << " end " << end << " perm_count " << perm_count << std::endl;
-    PermSet perms;
-    while (permIt.hasNext() && perms.size() < perm_count) {
-        std::vector<int> p = permIt.next();
-        for (int i = 0; i < p.size(); i++)
-            p[i] += start;
-        perms.push_back(p);
-    }
-
-        // If the number of permutations is less than perm_count, resample
-    while (perms.size() < perm_count)
-        perms.push_back(perms[rand() % perms.size()]);
-
-    return perms;
-};
-
-// Function to get permutations based on NA block boundaries
-// Perm 1...n should be the first element in returned vector
-PermSet get_perms4(const Series& series, int perm_count) {
-    auto n = series[0].size();
-
-    PermSet res;
-
-        // Look for block boundaries defined by NaNs
-    std::vector<int> bb = get_boundaries(series);
-
-    if (bb.empty()) {
-        res = gp(0, n, perm_count);
-    } else {
-//print("bb", bb);
-            // get permutations for each block
-        std::vector<std::vector<std::vector<int>>> perm_blocks(bb.size());
-        for (size_t i = 0; i < bb.size(); i++)
-            perm_blocks[i] = gp(i == 0 ? 0 : bb[i - 1], bb[i], perm_count);
-
-        if (bb.back() != n)
-            perm_blocks.push_back(gp(bb.back(), n, perm_count));
-//for (size_t i = 0; i < perm_blocks.size(); i++)
-//print("pb" + std::to_string(i), perm_blocks[i]);
-
-        res = perm_blocks[0];
-        for (size_t i = 1; i < perm_blocks.size(); i++) {
-            for (int j = 0; j < perm_count; ++j) {
-                res[j].insert(res[j].end(), perm_blocks[i][j].begin(), perm_blocks[i][j].end());
+            int n = block_boundaries.size();
+            if (num_NAs[i] == curr_num) {
+                block_boundaries[n - 1] = i + 1;
+            } else {
+                block_boundaries.push_back(i + 1);
+                curr_num = num_NAs[i];
             }
         }
     }
 
-    return res;
+    block_boundaries.push_back(num_visits);
+
+    return block_boundaries;
 }
 
 #define MIN_VISITS 6
@@ -174,6 +109,7 @@ PermSet get_perms4(const Series& series, int perm_count) {
     @param series A matrix of dB values with at least `num_locations` rows and `num_visits` columns.
     @return Updated series matrix or empty Series if cannot meet requirements.
 */
+bool is_nan (double d) { return std::isnan(d); }
 Series preProcess(Series series, int num_locations, int num_visits) {
     if (num_visits < MIN_VISITS || num_locations < 2) 
         return Series();
@@ -196,30 +132,28 @@ Series preProcess(Series series, int num_locations, int num_visits) {
     if (num_visits - min_visit_index + 1 < MIN_VISITS) 
         return Series();
 
-        // Throw out locations with less than MIN_VISITS from min_visit_index
-    for (int loc = 0; loc < num_locations;) {
-        int nan_count = 0;
-        for (int visit = min_visit_index; visit < min_visit_index + num_visits; visit++)
-            if (std::isnan(series[loc][visit]))
-                nan_count++;
-        if (num_visits - nan_count < MIN_VISITS) {
-                // swap last location up to here and shrink num_locations
-            for (int visit = min_visit_index; visit < min_visit_index + num_visits; visit++)
-                series[loc][visit] = series[num_locations - 1][visit];
-            num_locations--;
-        } else
-            loc++;
-    }
-
-    if (num_locations < 2) 
-        return Series();
-
         // Prune each location to num_visits from min_visit_index
     for (int loc = 0; loc < num_locations; loc++) {
         if (min_visit_index > 0)
             series[loc].erase(series[loc].begin(), series[loc].begin() + min_visit_index);
         series[loc].resize(num_visits);
     }
+
+        // Throw out locations with less than MIN_VISITS non-nan
+    for (int loc = 0; loc < num_locations;) {
+        int nan_count = count_if(series[loc].begin(), series[loc].end(), [](double x){return(isnan(x));});
+        if (num_visits - nan_count < MIN_VISITS) {
+                // swap last location up to here and shrink num_locations
+            for (int visit = 0; visit < num_visits; visit++)
+                series[loc][visit] = series[num_locations - 1][visit];
+            num_locations--;
+        } else
+            loc++;
+    }
+    series.erase(series.begin() + num_locations, series.end());
+
+    if (num_locations < 2) 
+        return Series();
 
     return series;
 }
@@ -234,10 +168,6 @@ double PoPLR4(Series series, int perm_count) {
 
     if (perm_count > std::tgamma(num_visits + 1))
         perm_count = std::tgamma(num_visits + 1);
-
-        // get permutation vectors for largest n
-    PermSet perms = get_perms4(series, perm_count);
-    perm_count = perms.size();  // does not include first 1:n
 
         // work out the x*, ybar, yds, y_skip values for each location
     std::vector<int> n(num_locations);
@@ -282,16 +212,22 @@ double PoPLR4(Series series, int perm_count) {
 //print("sqrtSumXdSq", sqrtSumXdSq);
 
     // Now compute all the p-values for each loc in each appropriate permutation
-    std::vector<double> S(perm_count);
+    std::vector<double> S;
     std::vector<double> p_vals(num_locations);
-    for (int perm = 0; perm < perm_count; perm++) {
-//print("perm:", perms[perm]);
+    std::vector<int> boundaries = get_boundaries(series);
+//print("boundaries", boundaries);
+    PermutationIterator pi(perm_count, boundaries);
+    perm_count = 0;
+    while (pi.hasNext()) {
+        std::vector<int> perm = pi.next();
+        perm_count++;
+//print("perm:", perm);
 
 //std::cout << "num_locations " << num_locations << std::endl;
         for (int loc = 0; loc < num_locations; loc++) {
             double beta = 0;
             for (int x = 1 ; x <= num_visits ; x++) {
-                int ip = perms[perm][x - 1];
+                int ip = perm[x - 1];
                 if (ip - 1 < y_skip[loc]) continue; // skip the NaN values
                 beta += (x - xbar[loc]) * yds[loc][ip - 1];
 //std::cout << "x= " << x << " ip= " << ip << " yd= " << yds[loc][ip - 1] << std::endl;
@@ -302,7 +238,7 @@ double PoPLR4(Series series, int perm_count) {
 
             double sse = 0, se, t;
             for (int x = 1 ; x <= num_visits ; x++) {
-                int ip = perms[perm][x - 1];
+                int ip = perm[x - 1];
                 if (ip - 1 < y_skip[loc]) continue; // skip the NaN values
                 sse += (series[loc][ip - 1] - alpha - beta * x) * 
                        (series[loc][ip - 1] - alpha - beta * x);
@@ -327,9 +263,10 @@ double PoPLR4(Series series, int perm_count) {
 
 //std::cout << "ps: "; for (double p : p_vals) std::cout << p << " "; std::cout << std::endl;
             // Now compute the S value for this permutation
-        S[perm] = 0.0;
+        double temp = 0.0;
         for (double p : p_vals)
-            S[perm] += -std::log(p);
+            temp += -std::log(p);
+        S.push_back(temp);
     }
 
 //print("S", S);
@@ -340,41 +277,9 @@ double PoPLR4(Series series, int perm_count) {
         else if (S[i] == S[0])
             equal++;
     }
+//cout << "less_than " << less_than << " equal " << equal << " perm_count " << perm_count << endl;
 
-    return 1 - (less_than + equal / 2.0) / perm_count;
-}
-
-// Function to read CSV file (generated by co-pilot) 11 Sep 2024
-std::vector<std::vector<double>> readCSV(const std::string& filename) {
-    std::vector<std::vector<double>> data;
-    std::ifstream file(filename);
-
-    if (!file.is_open()) {
-        std::cerr << "Error: Could not open file " << filename << std::endl;
-        return data;
-    }
-
-    std::string line;
-    while (std::getline(file, line)) {
-        std::vector<double> row;
-        std::stringstream ss(line);
-        std::string value;
-
-        while (std::getline(ss, value, ',')) {
-            try {
-                row.push_back(std::stod(value));
-            } catch (const std::invalid_argument& e) {
-                std::cerr << "Invalid number: " << value << std::endl;
-            } catch (const std::out_of_range& e) {
-                std::cerr << "Number out of range: " << value << std::endl;
-            }
-        }
-
-        data.push_back(row);
-    }
-
-    file.close();
-    return data;
+    return 1 - (less_than + equal / 2.0) / (perm_count - 1);
 }
     
 /*
@@ -395,6 +300,7 @@ Read in JSON file that has series of VFs. Format is
 
 Hand crafted parser with simple state.
 Ignores ' ' and '\n'.
+Converts any ".*" to nan.
 Assumes no negative numbers.
 */
 std::vector<Eye> read_json(const std::string& filename) {
@@ -410,7 +316,7 @@ std::vector<Eye> read_json(const std::string& filename) {
     }
 
     int ch;
-    int state = 0;  // 0 = null ; 1 = whole data; 2 = in eye ; 3 = in rep ; 4 = in row
+    int state = 0;  // 0 = null ; 1 = whole data; 2 = in eye ; 3 = in rep ; 4 = in row; 5 = in "..."
     int eye, ser, loc;
     double num = 0;
     double tens = 1;
@@ -439,6 +345,11 @@ std::vector<Eye> read_json(const std::string& filename) {
             sign = -1;
         } else if (ch == ',' && state == 4) {
             ADD_NUM;
+        } else if (ch == '"' && state == 4) {
+            state++;
+            num = std::numeric_limits<double>::quiet_NaN();
+        } else if (ch == '"' && state == 5) {
+            state--;  // ADD_NUM will be called at , or ]
         } else if (ch == ',') {
             continue;
         } else if (ch == ' ' || ch == '\n') {
@@ -460,33 +371,35 @@ std::vector<Eye> read_json(const std::string& filename) {
 
 int main(int argc, char *argv[]) {
     // Tests
-    /*
 
-    PermutationIterator pi(12, 16);
+    /*
+    PermutationIterator pi(15, 3);
     while (pi.hasNext()) {
         std::cout << "p ";
         for (int x : pi.next())
             std::cout << x << " ";
         std::cout << std::endl;
     }
+    */
 
+    /*
     std::vector<std::vector<std::vector<double>>> tests = {
        {{  1,   2, 3},
         {  1,   2, 3},
         {  1,   2, 3},
         {  1,   2, 3}},
 
-       {{  1,   2,    3, 4},
-        {  1,   2,    3, 4},
-        {NAN, NAN,    3, 4},
-        {NAN, NAN,    3, 4},
-        {NAN, NAN,  NAN, 4},
-        {NAN, NAN,  NAN, 4}},
+       {{  1,    2,     3, 4},
+        {  1,    2,     3, 4},
+        {"NA", "NA",    3, 4},
+        {"NA", "NA",    3, 4},
+        {"NA", "NA",  "NA", 4},
+        {"NA", "NA",  "NA", 4}},
 
-       {{  8,   7,    6, 5, 4, 3, 2, 1},
-        {  8,   7,    7, 7, 7, 7, 7, 7},
-        {NAN, NAN,    3, 4, 4, 4, 4, 4},
-        {NAN, NAN,  NAN, 4, 4, 4, 4, 4}},
+       {{  8,    7,    6,  5, 4, 3, 2, 1},
+        {  8,    7,    7,  7, 7, 7, 7, 7},
+        {"NA", "NA",   3,  4, 4, 4, 4, 4},
+        {"NA", "NA", "NA", 4, 4, 4, 4, 4}},
 
     };
 
@@ -501,16 +414,18 @@ int main(int argc, char *argv[]) {
             std::cout << std::endl;
         }
 
-        std::vector<std::vector<int>> perms = get_perms4(series, 5000);
-
             // Print permutations
         std::cout << "-------------" << std::endl;
-        for (const auto& perm : perms) {
+        auto bs = get_boundaries(series);
+        print("bs", bs);
+        PermutationIterator pi(10, bs);
+        while (pi.hasNext()) {
+            vector<int> perm = pi.next();
             print("", perm);
         }
     }
 
-    std::cout << PoPLR4(tests[2], tests[2].size(), tests[2][1].size(), 5000) << std::endl;
+    std::cout << PoPLR4(tests[2], 5000) << std::endl;
     */
 
 
@@ -521,25 +436,22 @@ int main(int argc, char *argv[]) {
 
     std::vector<Eye> eyes = read_json(argv[1]);
 
-    std::vector<std::vector<std::vector<double>>> results(126, 
-         std::vector<std::vector<double>>(13, std::vector<double>(100, -1)));
-
-     #pragma omp parallel for
-     for (int i_eye = 0 ; i_eye < eyes.size(); i_eye++) {
-        std::cout << "eye " << i_eye << std::endl;
+    std::cout << "eye,rep,visit,p" << std::endl;
+    //#pragma omp parallel for
+    for (int i_eye = 0 ; i_eye < eyes.size(); i_eye++) {
         for (int i_rep = 0 ; i_rep < eyes[i_eye].size(); i_rep++) {
             for (int visit = eyes[i_eye][i_rep][0].size(); visit >= 6; visit--) {
                 Series series = preProcess(eyes[i_eye][i_rep], eyes[i_eye][i_rep].size(), visit);
-                double res;
-                if (series.size() > 0)
-                    res = PoPLR4(series, 5000);
-                else
-                    res = -1;
-                std::cout << i_eye << "," << i_rep << "," << visit << "," << res << std::endl;
+                #pragma omp critical
+                {
+                std::cout << i_eye << "," << i_rep << "," << visit << ",";
+                std::cout << PoPLR4(series, 5000) << std::endl;
+                std::cout << endl;
+                //print("Series:", series);
+                }
             }
         }
-     }
-
+    }
     
     return 0;
 }
