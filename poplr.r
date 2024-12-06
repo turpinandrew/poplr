@@ -336,11 +336,11 @@ PoPLR3 <- function(series, threshold = 1, perm_count = 5000, warnings = TRUE, ar
 get_boundaries <- function(series) {
 #print(series)
 #print(series[seq(51, nrow(series)), , drop = FALSE])
-    if (nrow(series) == 52)
-        return(NULL)
-
         # num NAs for each visit
-    num_NAs <- apply(series[seq(53, nrow(series)), , drop = FALSE], 2, function(rr) sum(is.na(rr)))
+    num_NAs <- apply(series, 2, function(rr) sum(is.na(rr)))
+
+    if (all(num_NAs == 0))
+        return(NULL)
 
     curr_num <- num_NAs[[1]]
     block_boundaries <- c(1)
@@ -363,6 +363,7 @@ get_boundaries <- function(series) {
 }
 
 # Assumes no rows with less than 2 non-NAs
+# Only permutes with NA-block boundaries
 get_perms4 <- function(series, perm_count, warnings = TRUE) {
     bb <- get_boundaries(series)
 #print(bb)
@@ -413,6 +414,7 @@ get_perms4 <- function(series, perm_count, warnings = TRUE) {
 
 #' Only use permutations where NAs are at the start
 #' Only use locations with at least 6 visits.
+#' If arrest = TRUE, exclude any locations with <= 16 at penultimate visit.
 #' ASSUMES NAs are at the start.
 #
 #' @param series A matrix/data.frame with one row per location in the VF
@@ -421,8 +423,10 @@ get_perms4 <- function(series, perm_count, warnings = TRUE) {
 #'               Values in the column are dB values (either raw or Total Deviation).
 #' @param threshold Only include PLR p-values less than or equal to this number in S
 #' @param perm_count Number of permutations of series to get p-value for S
+#' @param warnings TRUE for warnings from PoPLR, FALSE for not.
+#' @param arrest If TRUE, discard yellow-yellow+-Orange*-Red* locations and use zest value for Green+-Yellow locations.
 #
-#' @return list containing 
+#' @return list containing
 #'   * p is p-value for statistic S which tracks the false positive rate of calling this series progressing.
 #'   * ss is a vector of S values for each permutation.
 PoPLR4 <- function(series, threshold = 1, perm_count = 5000, warnings = TRUE, arrest = FALSE) {
@@ -430,12 +434,18 @@ PoPLR4 <- function(series, threshold = 1, perm_count = 5000, warnings = TRUE, ar
     z <- apply(series, 1, function(rr) sum(!is.na(rr)) >= 6)
     series <- series[z, ]
 
+    if (arrest) {
+            # Only keep locations with 1 or fewer Yellow/Orange/Red
+        z <- apply(series, 1, function(rr) sum(rr <= 16, na.rm = TRUE) <= 1)
+        series <- series[z, ]
+    }
+
         # throw out any columns that are all NA
     z <- apply(series, 2, function(cc) any(!is.na(cc)))
     series <- series[, z]
 
-    if (nrow(series) <= 1) return(NA)
-    if (ncol(series) < 6) return(NA)
+    if (nrow(series) <= 1) return(list(ss = NA, p = NA))
+    if (ncol(series) <= 6) return(list(ss = NA, p = NA))
 
         # get permutation vectors for largest n
     n <- ncol(series)
@@ -469,35 +479,27 @@ PoPLR4 <- function(series, threshold = 1, perm_count = 5000, warnings = TRUE, ar
             if (b - a + 1 == n.loc) {
                 ys <- ys[a:b]
 
-                if (arrest && -1 %in% ys) {
-                    ii <- n.loc
-                    while (ii >= 1 && ys[[ii]] == -1)
-                        ii <- ii - 1
-                    if (ii > 1 && all(ys[1:ii] != -1))
-                        p_loc_perm[loc, perm] <- 0.5^(2 + ii)   # {!Red}+ -> {Red}+ could exist if tt=0 with this prob
-                    else
-                        p_loc_perm[loc, perm] <- 1   # {.}*Red{.}* -> {Red}+
-                } else {
-                    yd <- ys - ybar
+                yd <- ys - ybar
 
-                    beta <- sum(xd * yd) / sumXdSq
-                    alpha <- ybar - beta * xbar
-                    res <- ys - alpha - beta * xs
-                    sse <- sum((ys - alpha - beta * xs)^2)
-                    if (sse < 1e-10)  { # often == 0 for VF analysis of a small number of points. Also assumes sqrtSumXdSq is not super small.
-                        if (beta >= 0) {
-                            p_loc_perm[loc, perm] <- 1   # t -> Inf  (assuming 0/0 -> Inf)
-                        } else {
-                            p_loc_perm[loc, perm] <- 0   # t -> -Inf
-                        }
+                beta <- sum(xd * yd) / sumXdSq
+                alpha <- ybar - beta * xbar
+if (perm == 1)
+print(paste("beta", beta, "alpha", alpha))
+                res <- ys - alpha - beta * xs
+                sse <- sum((ys - alpha - beta * xs)^2)
+                if (sse < 1e-10)  { # often == 0 for VF analysis of a small number of points. Also assumes sqrtSumXdSq is not super small.
+                    if (beta >= 0) {
+                        p_loc_perm[loc, perm] <- 1   # t -> Inf  (assuming 0/0 -> Inf)
                     } else {
-                        se <- sqrt(sse / (n.loc - 2)) / sqrtSumXdSq
-                        t <- beta / se
-                        p_loc_perm[loc, perm] <- pt(t, n.loc - 2)
-            #cat(res)
-            #cat(sprintf("\nloc=%2s perm=%2s n=%2.0f beta=%+4.2f sse=%5.2f se=%4.2f t=%+5.2f p=%4.2f\n",
-            #      loc, perm, n.loc, beta, sse, se, t, pt(t, n.loc - 2)))
+                        p_loc_perm[loc, perm] <- 0   # t -> -Inf
                     }
+                } else {
+                    se <- sqrt(sse / (n.loc - 2)) / sqrtSumXdSq
+                    t <- beta / se
+                    p_loc_perm[loc, perm] <- pt(t, n.loc - 2)
+        #cat(res)
+        #cat(sprintf("\nloc=%2s perm=%2s n=%2.0f beta=%+4.2f sse=%5.2f se=%4.2f t=%+5.2f p=%4.2f\n",
+        #      loc, perm, n.loc, beta, sse, se, t, pt(t, n.loc - 2)))
                 }
             }
         }
@@ -517,6 +519,8 @@ PoPLR4 <- function(series, threshold = 1, perm_count = 5000, warnings = TRUE, ar
     pp <-  sum(others < S_values[[1]]) + sum(others == S_values[[1]])/2  # another assumption here for small discrete distributions.
     return(list(p = 1 - pp / perm_count, ss = S_values))
 }
+
+
 
 #############
 # test

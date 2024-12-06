@@ -17,10 +17,17 @@
 # @param perm_count Number of permutations of series to get p-value for S
 # @param warnings TRUE for warnings from PoPLR, FALSE for not.
 # @param numBaselines Number of visits to have before checking for event-based triggers (t)
-# @param eventP p-value to return is a location has an event trigger
+# @param eventP p-value to return if a location has an event trigger
 #
 # @return p-value = prob of having this data if the series has not truly progressed at visit n
 #
+
+# Henson style FoS curve
+pr_seeing <- function(x, tt, fpr = 0, fnr = 0) {
+    sd <- min(6, exp(3.27 - 0.081 * tt))
+    return(fpr + (1 - fpr - fnr) * (1 - pnorm(x, tt, sd)))
+}
+
 source('arrest6.r')
 source('poplr.r')
 PoPLR_ARREST <- function(series, threshold = 0.05, perm_count = 5000, warnings = TRUE,
@@ -34,13 +41,16 @@ PoPLR_ARREST <- function(series, threshold = 0.05, perm_count = 5000, warnings =
         sum(zz) >= numBaselines
     })
 
-    z.y <- base & series[, n] == .ArrestEnv$YELLOW
-    ps.y <- sapply(which(z.y), function(loc) {
-        ys <- series[loc, ]
-        z <- ys > .ArrestEnv$YELLOW
-        mean_green <- mean(ys[z])
-        1 - pr_seeing(.ArrestEnv$B, tt = mean_green, fpr = 0.15, fnr = 0.03)^2
-    })
+    z.y <- base & series[, n] == .ArrestEnv$YELLOW & series[, n - 1] > .ArrestEnv$YELLOW
+    if (any(z.y))
+        ps.y <- unlist(sapply(which(z.y), function(loc) {
+            ys <- series[loc, ]
+            z <- ys > .ArrestEnv$YELLOW
+            mean_green <- mean(ys[z])
+            1 - pr_seeing(.ArrestEnv$B, tt = mean_green, fpr = 0.15, fnr = 0.03)^2
+        }))
+    else
+        ps.y <- Inf
 
         # Yellows/Greens -> Red
     base <- apply(series, 1, function(rr) {
@@ -48,11 +58,14 @@ PoPLR_ARREST <- function(series, threshold = 0.05, perm_count = 5000, warnings =
         sum(zz) >= numBaselines
     })
 
-    z.r <- base & series[, n] == .ArrestEnv$RED
-    ps.r <- ifelse(any(z.r), 0, 1)
+    z.r <- base & series[, n] == .ArrestEnv$RED & series[, n - 1] > .ArrestEnv$RED
+    ps.r <- ifelse(any(z.r), 0, Inf)
 
     z <- series[, n] > .ArrestEnv$YELLOW
     ps.p <- PoPLR(series[z, ], threshold = threshold, perm_count = perm_count, warnings = warnings)
 
+    print((ps.y))
+    print((ps.r))
+    print((ps.p))
     return(min(c(ps.y, ps.r, ps.p)))
 }

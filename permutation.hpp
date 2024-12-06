@@ -1,3 +1,6 @@
+#ifndef PERMUTATION_HPP
+#define PERMUTATION_HPP
+
 #include <iostream>
 #include <vector>
 #include <algorithm>
@@ -234,3 +237,5 @@ private:
 
     vector<PermutationBase *> iterators;
 };
+
+#endif // PERMUTATION_HPP
