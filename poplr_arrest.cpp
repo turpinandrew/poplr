@@ -28,7 +28,7 @@
  @return Probability series is stable  (-1 if data has too few rows or visits)
 
 
-/opt/homebrew/Cellar/gcc/14.2.0/bin/g++-14 -Wc++11-extensions -std= c++14 -I /opt/homebrew/include/ poplr_arrest.cpp
+/opt/homebrew/Cellar/gcc/14.2.0/bin/g++-14 -Wc++11-extensions -std=c++14 -I /opt/homebrew/include/ poplr_arrest.cpp -o poplr_arrest
 */
 #include <vector>
 #include <unordered_set>
@@ -317,15 +317,18 @@ double PoPLR5(Series series, int perm_count) {
     
     // print usage and exit
 void usage() {
-    cerr << "Usage: poplr_arrest part_style db_treatment filename.json" << endl;
+    cerr << "Usage: poplr_arrest [-c n] part_style db_treatment filename.json" << endl;
     cerr << "       where" << endl;
     cerr << "           part_style   is H[orizontal] | V[ertical] grouping" << endl;
     cerr << "           db_treatment is 0 = Not arrest (no converting values, use every line)" << endl;
     cerr << "                           1 = ARREST with probs (convert values, apply PLR to Green lines, special probs to others)" << endl;
     cerr << "                           2 = ARREST no probs (convert values, only all-Green locations)" << endl;
+    cerr << "           -c n          restrict permutation count to n (default 5000 or visit!)." << endl;
+    cerr << endl;
     cerr << "        Horizontal partitioning groups rows/locations with the same number of visits." << endl;
-    cerr << "        Vertical partitioning groups columns/visits so that locations all have the same number of NAs." << endl;
+    cerr << "        Vertical partitioning groups columns/visits so that locations all have the same number of NAs at the start." << endl;
     cerr << "        Permuting happens within groups and group order remains the same." << endl;
+    cerr << endl;
     exit(-1);
 }
 
@@ -432,14 +435,21 @@ int main(int argc, char *argv[]) {
     return -1;
     */
     
-
-    if (argc != 4)
+    if (argc < 4)
         usage();
 
+    int max_perm_count = 5000;
+    int fixed_args_start = 1;
+
+    if (argc >= 2 && strcmp(argv[1], "-c") == 0) {
+        max_perm_count = stoi(argv[2]);
+        fixed_args_start = 3;
+    }
+
     function<double(Series, int)> PoPLR;
-    if (argv[1][0] == 'H' || argv[1][0] == 'h')
+    if (argv[fixed_args_start][0] == 'H' || argv[fixed_args_start][0] == 'h')
         PoPLR = PoPLR5;
-    else if (argv[1][0] == 'V' || argv[1][0] == 'v')
+    else if (argv[fixed_args_start][0] == 'V' || argv[fixed_args_start][0] == 'v')
         PoPLR = PoPLR4;
     else {
         cerr << "Invalid part_type." << endl;
@@ -447,7 +457,7 @@ int main(int argc, char *argv[]) {
     }
 
     ArrestSeries::ArrestProcessType arrest;
-    switch (stoi(argv[2])) {
+    switch (stoi(argv[fixed_args_start + 1])) {
         case 0: arrest = ArrestSeries::ArrestProcessType::NOT_ARREST; break;
         case 1: arrest = ArrestSeries::ArrestProcessType::ARREST_WITH_PROBS; break;
         case 2: arrest = ArrestSeries::ArrestProcessType::ARREST_NO_PROBS; break;
@@ -457,7 +467,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    vector<Eye> eyes = read_json(argv[3]);
+    vector<Eye> eyes = read_json(argv[fixed_args_start + 2]);
 
     cout << "eye,rep,visit,p" << endl;
     //#pragma omp parallel for
@@ -466,7 +476,7 @@ int main(int argc, char *argv[]) {
             for (int visit = eyes[i_eye][i_rep][0].size(); visit >= 6; visit--) {
                 Series series = preProcess(eyes[i_eye][i_rep], visit);
                 ArrestSeries *as = new ArrestSeries(series, arrest);
-                double poplr_p = PoPLR(as->get_series(), 5000);
+                double poplr_p = PoPLR(as->get_series(), max_perm_count);
                 double other_ps = as->get_min_p();
                 #pragma omp critical
                 {
