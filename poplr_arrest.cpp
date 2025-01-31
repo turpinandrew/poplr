@@ -140,10 +140,11 @@ Series preProcess(Series series, int num_visits) {
 
     @param series A matrix of dB values; rows are locations, columns are visits
     @param perm_count Number of permutations of series to get p-value for S
+    @param slope_limit Only include p-values in S statistic when PLR slope is <= slope_limit
 
     @return Estimated probability of stability of the series
 */
-double PoPLR4(Series series, int perm_count) {
+double PoPLR4(Series series, int perm_count, double slope_limit) {
     int num_locations = series.size();
     if (num_locations < 2) 
         return 1.0;
@@ -229,12 +230,10 @@ double PoPLR4(Series series, int perm_count) {
             }
 //cout << "beta " << beta << " alpha " << alpha << " sse " << sse;
 
-            if (sse < 1e-10) {
-                if (beta >= 0) {
-                    p_vals[loc] = 1.0; // t -> Inf
-                } else {
-                    p_vals[loc] = 0.0; // t -> -Inf
-                }
+            if (beta >= slope_limit) {
+                p_vals[loc] = 1.0; // t -> Inf, no contribution to S
+            } else if (sse < 1e-10) {
+                p_vals[loc] = 0.0; // t -> -Inf, massive contribution to S
             } else {
                 se = sqrt(sse / (n[loc] - 2)) / sqrtSumXdSq[loc];
                 t = beta / se;
@@ -263,7 +262,10 @@ double PoPLR4(Series series, int perm_count) {
     }
 //cout << "less_than " << less_than << " equal " << equal << " perm_count " << perm_count << endl;
 
-    return 1 - (less_than + equal / 2.0) / (perm_count - 1);
+    if (equal == S.size() - 1)
+        return 1.0;
+    else
+        return 1.0 - (less_than + equal / 2.0) / (perm_count - 1.0);
 }
 
 /*
@@ -273,10 +275,11 @@ double PoPLR4(Series series, int perm_count) {
 
     @param series A matrix of dB values; rows are locations, columns are visits
     @param perm_count Number of permutations of series to get p-value for S
+    @param slope_limit Only include p-values in S statistic when PLR slope is <= slope_limit
 
     @return Estimated probability of stability of the series
 */
-double PoPLR5(Series series, int perm_count) {
+double PoPLR5(Series series, int perm_count, double slope_limit) {
     int num_locations = series.size();
 
         // Work out number of leading NaNs (skips)
@@ -307,7 +310,7 @@ double PoPLR5(Series series, int perm_count) {
             perm_count = tgamma(num_visits + 1);
 
         if (sub_series.size() > 0) {
-            double p = PoPLR4(sub_series, perm_count);
+            double p = PoPLR4(sub_series, perm_count, slope_limit);
             if (p < minP) 
                 minP = p;
         }
@@ -317,17 +320,37 @@ double PoPLR5(Series series, int perm_count) {
     
     // print usage and exit
 void usage() {
-    cerr << "Usage: poplr_arrest [-c n] part_style db_treatment filename.json" << endl;
+    cerr << "Usage: poplr_arrest [-c n] [-V] [-d db_treatment] [-s slope_limit] filename.json" << endl;
     cerr << "       where" << endl;
-    cerr << "           part_style   is H[orizontal] | V[ertical] grouping" << endl;
-    cerr << "           db_treatment is 0 = Not arrest (no converting values, use every line)" << endl;
-    cerr << "                           1 = ARREST with probs (convert values, apply PLR to Green lines, special probs to others)" << endl;
-    cerr << "                           2 = ARREST no probs (convert values, only all-Green locations)" << endl;
-    cerr << "           -c n          restrict permutation count to n (default 5000 or visit!)." << endl;
+    cerr << "           -c n restrict permutation count to n (default 5000 or visit!)." << endl;
+    cerr << "           -V uses vertical grouping. (default uses horizontal grouping)." << endl;
+    cerr << "           -d db_treatment is 0 = Not arrest (no converting values, use every line)." << endl;
+    cerr << "                           1 = ARREST with probs (convert values, apply PLR to," << endl;
+    cerr << "                               Green lines, special probs to others)." << endl;
+    cerr << "                           2 = ARREST no probs (convert values, only all-Green locations)." << endl;
+    cerr << "                          (default = 0)." << endl;
+    cerr << "           -s slope_limit Only include p-values in S statistic when PLR slope is < slope_limit." << endl;
+    cerr << "                          (default = 0)." << endl;
     cerr << endl;
     cerr << "        Horizontal partitioning groups rows/locations with the same number of visits." << endl;
-    cerr << "        Vertical partitioning groups columns/visits so that locations all have the same number of NAs at the start." << endl;
+    cerr << "        Vertical partitioning groups columns/visits so that locations" << endl;
+    cerr << "                              all have the same number of NAs at the start." << endl;
     cerr << "        Permuting happens within groups and group order remains the same." << endl;
+    cerr << endl;
+    cerr << "        JSON file is [[" << endl;
+    cerr << "                        [ // VF 1" << endl;
+    cerr << "                           [loc_1_visit1, loc_1_visit_2, ..., loc_1_visit_n]," << endl;
+    cerr << "                           [loc_2_visit1, loc_2_visit_2, ..., loc_2_visit_n]," << endl;
+    cerr << "                            ..." << endl;
+    cerr << "                           [loc_n_visit1, loc_n_visit_2, ..., loc_n_visit_n]" << endl;
+    cerr << "                        ]," << endl;
+    cerr << "                        [ // VF 2" << endl;
+    cerr << "                           [loc_1_visit1, loc_1_visit_2, ..., loc_1_visit_n]," << endl;
+    cerr << "                           [loc_2_visit1, loc_2_visit_2, ..., loc_2_visit_n]," << endl;
+    cerr << "                           ..." << endl;
+    cerr << "                           [loc_n_visit1, loc_n_visit_2, ..., loc_n_visit_n]]," << endl;
+    cerr << "                        ], ..." << endl;
+    cerr << "                     ]]" << endl;
     cerr << endl;
     exit(-1);
 }
@@ -435,39 +458,42 @@ int main(int argc, char *argv[]) {
     return -1;
     */
     
-    if (argc < 4)
-        usage();
+        // set default arguments
+    int max_perm_count = 5000;                       // for -c
+    function<double(Series, int, double)> PoPLR = PoPLR5;    // for -V or ! -V
+    ArrestSeries::ArrestProcessType arrest = ArrestSeries::ArrestProcessType::NOT_ARREST; // for -d
+    double slope_upper_limit = 0;  // for -s
+    char *filename = nullptr;
 
-    int max_perm_count = 5000;
-    int fixed_args_start = 1;
-
-    if (argc >= 2 && strcmp(argv[1], "-c") == 0) {
-        max_perm_count = stoi(argv[2]);
-        fixed_args_start = 3;
-    }
-
-    function<double(Series, int)> PoPLR;
-    if (argv[fixed_args_start][0] == 'H' || argv[fixed_args_start][0] == 'h')
-        PoPLR = PoPLR5;
-    else if (argv[fixed_args_start][0] == 'V' || argv[fixed_args_start][0] == 'v')
-        PoPLR = PoPLR4;
-    else {
-        cerr << "Invalid part_type." << endl;
-        usage();
-    }
-
-    ArrestSeries::ArrestProcessType arrest;
-    switch (stoi(argv[fixed_args_start + 1])) {
-        case 0: arrest = ArrestSeries::ArrestProcessType::NOT_ARREST; break;
-        case 1: arrest = ArrestSeries::ArrestProcessType::ARREST_WITH_PROBS; break;
-        case 2: arrest = ArrestSeries::ArrestProcessType::ARREST_NO_PROBS; break;
-        default: {
-            cerr << "Invalid db_type." << endl;
-            usage();
+        // process options
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-c") == 0) {
+            max_perm_count = stoi(argv[++i]);
+        } else if (strcmp(argv[i], "-V") == 0) {
+            PoPLR = PoPLR4;
+        } else if (strcmp(argv[i], "-d") == 0) {
+            switch (stoi(argv[++i])) {
+                case 0: arrest = ArrestSeries::ArrestProcessType::NOT_ARREST; break;
+                case 1: arrest = ArrestSeries::ArrestProcessType::ARREST_WITH_PROBS; break;
+                case 2: arrest = ArrestSeries::ArrestProcessType::ARREST_NO_PROBS; break;
+                default: {
+                    cerr << "Invalid db_type." << endl;
+                    usage();
+                }
+            }
+        } else if (strcmp(argv[i], "-s") == 0) {
+            slope_upper_limit = stod(argv[++i]);
+        } else {
+            filename = argv[i];
         }
     }
 
-    vector<Eye> eyes = read_json(argv[fixed_args_start + 2]);
+    if (filename == nullptr) {
+        cerr << "No json filename given." << endl;
+        usage();
+    }
+
+    vector<Eye> eyes = read_json(filename);
 
     cout << "eye,rep,visit,p" << endl;
     //#pragma omp parallel for
@@ -476,7 +502,7 @@ int main(int argc, char *argv[]) {
             for (int visit = eyes[i_eye][i_rep][0].size(); visit >= 6; visit--) {
                 Series series = preProcess(eyes[i_eye][i_rep], visit);
                 ArrestSeries *as = new ArrestSeries(series, arrest);
-                double poplr_p = PoPLR(as->get_series(), max_perm_count);
+                double poplr_p = PoPLR(as->get_series(), max_perm_count, slope_upper_limit);
                 double other_ps = as->get_min_p();
                 #pragma omp critical
                 {
