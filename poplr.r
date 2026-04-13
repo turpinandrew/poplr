@@ -206,7 +206,6 @@ PoPLR <- function(series, threshold = 0.05, perm_count = 5000, warnings = TRUE, 
             }
         }
     }
-
     S_values <- apply(p_loc_perm, 2, function(ps) {
         z <- ps <= max(min(ps, na.rm = TRUE), threshold)
         sum(-log(ps[z]), na.rm = TRUE)

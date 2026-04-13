@@ -115,3 +115,21 @@ The principle behind each method:
  * selected perms - use one set of perms, but for rows with NAs, leave out perms that do not have NAs 
                     just at either end (ie we don't know what happened at that visit, so cannot 
                     include it in a perm)
+
+
+# Post ARREST 10-2 reviews
+
+Reviewer wonders if specificity changes when you split VF series
+into two halves (by location/rows), compute PoPLR on each and then
+take the min.
+<pre>
+Experiment
+
+Let S = 52 rows, 10 cols of stable data
+For n = 0:10 (say) # number of added rows
+    Let S' = rbind(S,  n rows of c(NA, shuffle(head(one of the 52 rows, -1)))
+    run PoPLR H (horizontal splits)
+    print p
+
+If p for n=0 about same as others?
+</pre>

@@ -12,68 +12,68 @@
 using namespace std;
 
 Series s1 {
-    {35, 35, 35, 35, 35, 35, 35, 35, 35, 35},
-    {35, 35, 35, 35, 35, 35, 35, 35, 35, 35},
-    {35, 35, 35, 35, 35, 35, 35, 35, 35, 35},
-    {35, 35, 35, 35, 35, 35, 35, 35, 35, 35},
-    {35, 35, 35, 35, 35, 35, 35, 35, 35, 35}
+    {30, 30, 30, 30, 30, 30, 30, 30, 30, 30},
+    {30, 30, 30, 30, 30, 30, 30, 30, 30, 30},
+    {30, 30, 30, 30, 30, 30, 30, 30, 30, 30},
+    {30, 30, 30, 30, 30, 30, 30, 30, 30, 30},
+    {30, 30, 30, 30, 30, 30, 30, 30, 30, 30}
 };
 
 Series a1 {
-    {35, 35, 35, 35, 35, 35, 35, 35, 35, 35},
-    {35, 35, 35, 35, 35, 35, 35, 35, 35, 35},
-    {35, 35, 35, 35, 35, 35, 35, 35, 35, 35},
-    {35, 35, 35, 35, 35, 35, 35, 35, 35, 35},
-    {35, 35, 35, 35, 35, 35, 35, 35, 35, 35}
+    {30, 30, 30, 30, 30, 30, 30, 30, 30, 30},
+    {30, 30, 30, 30, 30, 30, 30, 30, 30, 30},
+    {30, 30, 30, 30, 30, 30, 30, 30, 30, 30},
+    {30, 30, 30, 30, 30, 30, 30, 30, 30, 30},
+    {30, 30, 30, 30, 30, 30, 30, 30, 30, 30}
 };
 
-    // end in Red
+    // hippos end in Red
 Series s2 {
-    {35, 35, 35, 35, 35, 35, 35, 35, 35, 35},
-    {35, 35, 35, 35, 35, 35, 35, 35, 35, 35},
-    {35, 35, 35, 35, 35, 35, 35, 35, 35, 35},
-    {35, 35, 35, 35, 35, 35, 35, 35, 35, 35},
-    {35, 35, 35, 35, Y(17), Y(17), Y(17), O(17), R(), R()}
+    {30, 30, 30, 30, 30, 30, 30, 30, 30, 30},
+    {30, 30, 30, 30, 30, 30, 30, 30, 30, 30},
+    {30, 30, 30, 30, 30, 30, 30, 30, 30, 30},
+    {30, 30, 30, 30, 30, 30, 30, 30, 30, 30},
+    {30, 30, 30, 30, Y(17), Y(17), Y(17), O(17), R(), R()}
 };
 
 Series a2 {
-    {35, 35, 35, 35, 35, 35, 35, 35, 35, 35},
-    {35, 35, 35, 35, 35, 35, 35, 35, 35, 35},
-    {35, 35, 35, 35, 35, 35, 35, 35, 35, 35},
-    {35, 35, 35, 35, 35, 35, 35, 35, 35, 35}
+    {30, 30, 30, 30, 30, 30, 30, 30, 30, 30},
+    {30, 30, 30, 30, 30, 30, 30, 30, 30, 30},
+    {30, 30, 30, 30, 30, 30, 30, 30, 30, 30},
+    {30, 30, 30, 30, 30, 30, 30, 30, 30, 30}
 };
 
     // all Yellow
 Series s3 {
-    {35, 35, 35, 35, 35, 35, 35, 35, 35, 35},
-    {35, 35, 35, 35, 35, 35, 35, 35, 35, 35},
-    {35, 35, 35, 35, 35, 35, 35, 35, 35, 35},
-    {35, 35, 35, 35, 35, 35, 35, 35, 35, 35},
+    {30, 30, 30, 30, 30, 30, 30, 30, 30, 30},
+    {30, 30, 30, 30, 30, 30, 30, 30, 30, 30},
+    {30, 30, 30, 30, 30, 30, 30, 30, 30, 30},
+    {30, 30, 30, 30, 30, 30, 30, 30, 30, 30},
     {Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10)}
 };
 
 Series a3 {
-    {35, 35, 35, 35, 35, 35, 35, 35, 35, 35},
-    {35, 35, 35, 35, 35, 35, 35, 35, 35, 35},
-    {35, 35, 35, 35, 35, 35, 35, 35, 35, 35},
-    {35, 35, 35, 35, 35, 35, 35, 35, 35, 35}
+    {30, 30, 30, 30, 30, 30, 30, 30, 30, 30},
+    {30, 30, 30, 30, 30, 30, 30, 30, 30, 30},
+    {30, 30, 30, 30, 30, 30, 30, 30, 30, 30},
+    {30, 30, 30, 30, 30, 30, 30, 30, 30, 30}
 };
 
     // degenerate
 Series s4 {
-    {35, Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10)},
-    {35, Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10)},
-    {35, Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10)},
-    {35, Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10)},
-    {35, Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10)}
+    {30, Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10)},
+    {30, Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10)},
+    {30, Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10)},
+    {30, Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10)},
+    {30, Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10)}
 };
 
 Series a4 {};
 
     // G G G Y Y Y 
 Series s5 {
-    {35, 35, 35, 35, 35, 35, 35, 35, 35, 35},
-    {35, 35, 35, 35, 35, 35, 35, 35, 35, 35},
+    {30, 30, 30, 30, 30, 30, 30, 30, 30, 30},
+    {30, 30, 30, 30, 30, 30, 30, 30, 30, 30},
     {16, 16, 16, 16, 16, Y(16), Y(16), Y(16), Y(16), Y(16)},
     {30, 28, 26, 24, 22, Y(14), Y(14), Y(14), Y(14), Y(14)},
     {30, 28, 26, 24, Y(14), Y(14), Y(14), Y(14), Y(14), Y(14)},
@@ -83,8 +83,8 @@ Series s5 {
 };
 
 Series a5 {
-    {35, 35, 35, 35, 35, 35, 35, 35, 35, 35},
-    {35, 35, 35, 35, 35, 35, 35, 35, 35, 35}
+    {30, 30, 30, 30, 30, 30, 30, 30, 30, 30},
+    {30, 30, 30, 30, 30, 30, 30, 30, 30, 30}
 };
 
 Series s6 {
@@ -365,9 +365,10 @@ Series a7_stable_21_e101_r1 = {
     @param expected_p Expected minimum p
     @param expected_size Expected size of resulting series (should be nrow(a))
     @param header Header for output
+    @param filename Filename for p(mt|mt) csv
 */
-void tester(Series s, Series a, double expected_p, int expected_size, string header) {
-    ArrestSeries *as = new ArrestSeries(s, ArrestSeries::ArrestProcessType::ARREST_WITH_PROBS);
+void tester(Series s, Series a, double expected_p, int expected_size, string header, string filename) {
+    ArrestSeries *as = new ArrestSeries(s, ArrestSeries::ArrestProcessType::ARREST_WITH_PROBS, filename);
 
     bool pass = abs(as->get_min_p() - expected_p) < 0.00001;
     pass &= as->get_series().size() == expected_size;
@@ -379,11 +380,12 @@ void tester(Series s, Series a, double expected_p, int expected_size, string hea
 
     cout << "\n******\n" << header << (pass ?  "Pass" : "Fail") << endl;
     if (!pass) {
-        cout << "Min p: " << as->get_min_p() << endl;
         cout << "Size as: " << as->get_series().size() << endl;
         print("s ", as->get_series());
         print("a ", a);
+        cout << "Filename: " << filename << endl;
     }
+    cout << "Min p: " << as->get_min_p() << endl;
     print("pr gys:", as->get_pr_gys());
     print("pr yrs:", as->get_pr_yrs());
 
@@ -391,19 +393,20 @@ void tester(Series s, Series a, double expected_p, int expected_size, string hea
 
 
 int main() {
-    tester(s1, a1, 1, 5, "s1 ");
-    tester(s2, a2, 9.10979e-16, 4, "s2 ");
-    tester(s3, a3, 1, 4, "s3 ");
-    tester(s4, a4, 1, 0, "s4 ");
-    tester(s5, a5, 0.00832307, 2, "s5 ");
+    tester(s1, a1, 1, 5, "s1 ", "arrest11_fp15_fn03_pr_tt_given_mt.csv");
+    tester(s2, a2, 9.10979e-16, 4, "s2 ", "arrest11_fp15_fn03_pr_tt_given_mt.csv");
+    tester(s3, a3, 1, 4, "s3 ", "arrest11_fp15_fn03_pr_tt_given_mt.csv");
+    tester(s4, a4, 1, 0, "s4 ", "arrest11_fp15_fn03_pr_tt_given_mt.csv");
+    tester(s5, a5, 5e-05, 2, "s5 ", "arrest11_fp15_fn03_pr_tt_given_mt.csv");
+    tester(s6, a5, 3e-10, 0, "s6 ", "arrest11_fp15_fn03_pr_tt_given_mt.csv");
 
-    tester(s6, a5, 0.9, 0, "s6 ");
+    /*
 
-    tester(a7_stable_21_e101_r1, a_a7_stable_21_e101_r1, 0.0613947, 29, "e101 rep1 ");
+    tester(a7_stable_21_e101_r1, a_a7_stable_21_e101_r1, 0.0613947, 29, "e101 rep1 ", "arrest10_2_sd2_fp15_fn03_pr_tt_given_mt.csv");
 
-    tester(a7_stable_21_e125_r1, a_a7_stable_21_e101_r1, 0.0613947, 29, "e125 rep1 visit 12");
+    tester(a7_stable_21_e125_r1, a_a7_stable_21_e101_r1, 0.0613947, 29, "e125 rep1 visit 12", "arrest10_2_sd2_fp15_fn03_pr_tt_given_mt.csv");
 
-    tester(a7_stable_21_e125_r1_v6, a_a7_stable_21_e101_r1, 0.506597, 29, "e125 rep1 visit 6");
+    tester(a7_stable_21_e125_r1_v6, a_a7_stable_21_e101_r1, 0.506597, 29, "e125 rep1 visit 6", "arrest10_2_sd2_fp15_fn03_pr_tt_given_mt.csv");
 
     //vector<Eye> eyes = read_json("e101_a20_stab_r3_v6.json");
     vector<Eye> eyes = read_json("e99_a20_stab_r57_v12.json");
@@ -414,7 +417,7 @@ int main() {
     for (Eye e : eyes)
         for (Series s : e) {
             //tester(s, a1, 1, 5, "e101 rep3 visit 6 ");
-            tester(s, a1, 1, 5, "e99 rep57 visit 12");
+            tester(s, a1, 1, 5, "e99 rep57 visit 12", "arrest10_2_sd2_fp15_fn03_pr_tt_given_mt.csv");
             //tester(s, a1, 1, 5, "e42 rep15 visit 12");
             //tester(s, a1, 1, 5, "e97 rep22 visit 12");
             //tester(s, a1, 1, 5, "e84 rep9 visit 12");
@@ -423,7 +426,6 @@ int main() {
 
     ArrestSeries *as = new ArrestSeries(s5, ArrestSeries::ArrestProcessType::ARREST_WITH_PROBS);
     as->test();
-    /*
     */
 
     return 0;

@@ -320,7 +320,7 @@ double PoPLR5(Series series, int perm_count, double slope_limit) {
     
     // print usage and exit
 void usage() {
-    cerr << "Usage: poplr_arrest [-c n] [-V] [-d db_treatment] [-s slope_limit] filename.json" << endl;
+    cerr << "Usage: poplr_arrest [-c n] [-V] [-d db_treatment] [-s slope_limit] p(tt|mt)_filename filename.json" << endl;
     cerr << "       where" << endl;
     cerr << "           -c n restrict permutation count to n (default 5000 or visit!)." << endl;
     cerr << "           -V uses vertical grouping. (default uses horizontal grouping)." << endl;
@@ -336,6 +336,8 @@ void usage() {
     cerr << "        Vertical partitioning groups columns/visits so that locations" << endl;
     cerr << "                              all have the same number of NAs at the start." << endl;
     cerr << "        Permuting happens within groups and group order remains the same." << endl;
+    cerr << endl;
+    cerr << "        P(tt|mt) file is a csv, one row per mt, one column per tt." << endl;
     cerr << endl;
     cerr << "        JSON file is [[" << endl;
     cerr << "                        [ // VF 1" << endl;
@@ -463,7 +465,8 @@ int main(int argc, char *argv[]) {
     function<double(Series, int, double)> PoPLR = PoPLR5;    // for -V or ! -V
     ArrestSeries::ArrestProcessType arrest = ArrestSeries::ArrestProcessType::NOT_ARREST; // for -d
     double slope_upper_limit = 0;  // for -s
-    char *filename = nullptr;
+    string filename;
+    string pr_tt_given_mt_filename;
 
         // process options
     for (int i = 1; i < argc; i++) {
@@ -483,13 +486,18 @@ int main(int argc, char *argv[]) {
             }
         } else if (strcmp(argv[i], "-s") == 0) {
             slope_upper_limit = stod(argv[++i]);
-        } else {
+        } else if (i == argc - 2) {
+            pr_tt_given_mt_filename = argv[i];
+        } else if (i == argc - 1) {
             filename = argv[i];
         }
     }
-
-    if (filename == nullptr) {
+    if (filename.empty()) {
         cerr << "No json filename given." << endl;
+        usage();
+    }
+    if (pr_tt_given_mt_filename.empty()) {
+        cerr << "No P(mt|tt) filename given." << endl;
         usage();
     }
 
@@ -501,7 +509,7 @@ int main(int argc, char *argv[]) {
         for (int i_rep = 0 ; i_rep < eyes[i_eye].size(); i_rep++) {
             for (int visit = eyes[i_eye][i_rep][0].size(); visit >= 6; visit--) {
                 Series series = preProcess(eyes[i_eye][i_rep], visit);
-                ArrestSeries *as = new ArrestSeries(series, arrest);
+                ArrestSeries *as = new ArrestSeries(series, arrest, pr_tt_given_mt_filename);
                 double poplr_p = PoPLR(as->get_series(), max_perm_count, slope_upper_limit);
                 double other_ps = as->get_min_p();
                 #pragma omp critical
