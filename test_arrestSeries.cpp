@@ -95,6 +95,19 @@ Series s6 {
     {10, 10, 10, Y(14), O(14), -999}
 };
 
+Series s7 {
+    {NAN, 30, 30, 30, 30, 30, 30, 30, 30, 30},
+    {NAN, 30, 30, 30, 30, 30, 30, 30, 30, 30}
+};
+
+Series s8 {
+    {29, 28, 27, 26, 25, 24, 23, 22, 21},
+    {NAN, 30, 30, 30, 30, 30, 30, 30, 30},
+    {NAN, NAN, 29, 30, 30, 30, 30, 30, 30},
+    {NAN, NAN, NAN, 30, 30, 30, 30, 30, 30}
+};
+
+
 Series a7_stable_21_e101_r1 = {
   {  25.2500,-114.6410,-114.6410,-114.6410,-114.6410,-114.6410,-114.6410,-114.6410,-114.6410,-114.6410,-114.6410,-114.6410},
   {  22.0682,  17.0677,  21.2230,  11.2733,  24.7591,  22.0360,  28.7629,  23.6009,  17.0347,  18.6527,  26.6499,  16.1782},
@@ -362,43 +375,58 @@ Series a7_stable_21_e101_r1 = {
 /*
     @param s Series to test
     @param a Expected series after processing
-    @param expected_p Expected minimum p
+    @param expected_pp Expected minimum p for non-all-green sequences
     @param expected_size Expected size of resulting series (should be nrow(a))
     @param header Header for output
-    @param filename Filename for p(mt|mt) csv
+    @param filename Filename for p(tt|mt) csv
+    @param filename17 Filename for p(mt<17|tt) csv
+    @param horizontal True for horizontal partitioning, false for vertical
 */
-void tester(Series s, Series a, double expected_p, int expected_size, string header, string filename) {
-    ArrestSeries *as = new ArrestSeries(s, ArrestSeries::ArrestProcessType::ARREST_WITH_PROBS, filename);
+void tester(Series s, Series a, double expected_pp,
+            string header, string filename, string filename17,
+            bool horizontal = true) {
+    //PermutationIterator pi(25, 10);
+    //for (auto p = pi.next(); pi.hasNext(); p = pi.next()) print("perm", p);
 
-    bool pass = abs(as->get_min_p() - expected_p) < 0.00001;
-    pass &= as->get_series().size() == expected_size;
+    cout << "\n****** " << header << endl;
+    ArrestSeries *as = new ArrestSeries(s, ArrestSeries::ArrestProcessType::ARREST_WITH_PROBS, filename, filename17);
+
+    bool pass = abs(as->get_min_p() - expected_pp) < 0.00001;
+    pass &= as->get_series().size() == a.size();
     
     if (pass)
         for(int i = 0 ; i < a.size() ; i++)
             for(int j = 0 ; j < a[i].size() ; j++)
                 pass &= a[i][j] == as->get_series()[i][j];
 
-    cout << "\n******\n" << header << (pass ?  "Pass" : "Fail") << endl;
+    cout << (pass ?  "Pass Prob phase" : "Fail Prob phase") << endl;
     if (!pass) {
         cout << "Size as: " << as->get_series().size() << endl;
         print("s ", as->get_series());
         print("a ", a);
         cout << "Filename: " << filename << endl;
+        cout << "Filename17: " << filename17 << endl;
     }
     cout << "Min p: " << as->get_min_p() << endl;
     print("pr gys:", as->get_pr_gys());
     print("pr yrs:", as->get_pr_yrs());
+    print("For PoPLR:", as->get_series());
 
+    cout << "PoPLR on all greens Horizontal: p = " << PoPLR4(as->get_series(), 5000, 0) << endl;
+    cout << "PoPLR on all greens Vertical  : p = " << PoPLR5(as->get_series(), 5000, 0) << endl;
+    cout << "PoPLR on all greens Ignore    : p = " << PoPLR6(as->get_series(), 5000, 0) << endl;
 }
 
 
 int main() {
-    tester(s1, a1, 1, 5, "s1 ", "arrest11_fp15_fn03_pr_tt_given_mt.csv");
-    tester(s2, a2, 9.10979e-16, 4, "s2 ", "arrest11_fp15_fn03_pr_tt_given_mt.csv");
-    tester(s3, a3, 1, 4, "s3 ", "arrest11_fp15_fn03_pr_tt_given_mt.csv");
-    tester(s4, a4, 1, 0, "s4 ", "arrest11_fp15_fn03_pr_tt_given_mt.csv");
-    tester(s5, a5, 5e-05, 2, "s5 ", "arrest11_fp15_fn03_pr_tt_given_mt.csv");
-    tester(s6, a5, 3e-10, 0, "s6 ", "arrest11_fp15_fn03_pr_tt_given_mt.csv");
+    tester(s1, a1, 1, "s1 ", "arrest11_fp15_fn03_pr_tt_given_mt.csv", "arrest11_fp15_fn03_pr_mtlt17_given_tt.csv");
+    tester(s2, a2, 9.10979e-16, "s2 ", "arrest11_fp15_fn03_pr_tt_given_mt.csv", "arrest11_fp15_fn03_pr_mtlt17_given_tt.csv");
+    tester(s3, a3, 1, "s3 ", "arrest11_fp15_fn03_pr_tt_given_mt.csv", "arrest11_fp15_fn03_pr_mtlt17_given_tt.csv");
+    tester(s4, a4, 1, "s4 ", "arrest11_fp15_fn03_pr_tt_given_mt.csv", "arrest11_fp15_fn03_pr_mtlt17_given_tt.csv");
+    tester(s5, a5, 5e-05, "s5 ", "arrest11_fp15_fn03_pr_tt_given_mt.csv", "arrest11_fp15_fn03_pr_mtlt17_given_tt.csv");
+    tester(s6, a4, 3e-10, "s6 ", "arrest11_fp15_fn03_pr_tt_given_mt.csv", "arrest11_fp15_fn03_pr_mtlt17_given_tt.csv");
+    tester(s7, s7, 3e-10, "s7 ", "arrest11_fp15_fn03_pr_tt_given_mt.csv", "arrest11_fp15_fn03_pr_mtlt17_given_tt.csv");
+    tester(s8, s8, 3e-10, "s8 ", "arrest11_fp15_fn03_pr_tt_given_mt.csv", "arrest11_fp15_fn03_pr_mtlt17_given_tt.csv");
 
     /*
 

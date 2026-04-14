@@ -7,7 +7,7 @@
 #include <span>
 #include <numeric>
 #include <boost/math/distributions/students_t.hpp>
-#include "poplr_arrest.hpp"
+#include "types.hpp"
 
 using namespace std;
 
@@ -30,9 +30,10 @@ public:
     /*
         @param series A matrix of dB or ARREST values.
         @param type If type == NOT_ARREST, do nothing, else call process
-        @param pr_tt_given_mt_filename The filename of the CSV file containing pr_tt_given_mt values (one row mer mt, col per tt).
+        @param pr_tt_given_mt_filename The filename of the CSV file containing P(tt|mt) values (one row per mt, col per tt).
+        @param pr_mtlt17_given_tt_filename The filename of the CSV file containing P(mt < 17 | tt) values (one row, one column per tt).
     */
-    ArrestSeries(Series series, ArrestProcessType type, string pr_tt_given_mt_filename) {
+    ArrestSeries(Series series, ArrestProcessType type, string pr_tt_given_mt_filename, string pr_mtlt17_given_tt_filename) {
         this->series = series;
 
         if (type == ArrestProcessType::NOT_ARREST)
@@ -43,7 +44,8 @@ public:
 
         cache_pr_yellow_red = std::vector<std::vector<double>>(pr_yellow_red_cache_size, std::vector<double>(pr_yellow_red_cache_size, -1));
 
-        read_pr_tt_given_mt_file(pr_tt_given_mt_filename);
+        read_csv(pr_tt_given_mt_filename, mt_domain_size, tt_domain_size, true, pr_tt_given_mt);
+        read_csv(pr_mtlt17_given_tt_filename, 1, tt_domain_size, false, pr_mtlt17_given_tt);
 
         process(type);
     }
@@ -211,56 +213,66 @@ private:
         0, 0, 0, 0, 0, 0, 0, 0};
 
     long double pr_tt_given_mt[mt_domain_size][tt_domain_size];
+    long double pr_mtlt17_given_tt[1][tt_domain_size];
+
     /*
-        Read csv file with one row per tt, one column per mt
-        @param filename Filename of a CSV file with one row per mt and one column per tt
+        Read csv file with nrows row, ncols columns
+
+        @param filename Filename of a CSV file with nrows row and ncols columns
+        @param nrows Number of rows to read
+        @param ncols Number of cols to read
+        @param row_sum_check Whether to check if rows sum to 1
+
+        @return 0 on success, -1 on failure
     */
-    void read_pr_tt_given_mt_file(const std::string filename) {
+    int read_csv(const std::string filename, int nrows, int ncols, bool row_sum_check, long double data[][tt_domain_size]) {
         FILE *f = fopen(filename.c_str(), "r");
         if (!f) {
             perror(("Error opening file " + filename).c_str());
-            return;
+            return -1;
         }
 
             // read csv from f (loop via copilot)
         char line[2048];
-        int mt = 0;
-        while (fgets(line, sizeof(line), f) && mt < mt_domain_size) {
-            int tt = 0;
+        int row = 0;
+        while (fgets(line, sizeof(line), f) && row < nrows) {
+            int col = 0;
             char *token = strtok(line, ",");
-            while (token && tt < tt_domain_size) {
+            while (token && col < ncols) {
                 if (strcmp(token, "NaN") == 0) {
-                    pr_tt_given_mt[mt][tt] = std::numeric_limits<double>::quiet_NaN();
+                    data[row][col] = std::numeric_limits<double>::quiet_NaN();
                 } else {
-                    pr_tt_given_mt[mt][tt] = strtold(token, nullptr);
+                    data[row][col] = strtold(token, nullptr);
                 }
                 token = strtok(nullptr, ",");
-                tt++;
+                col++;
             }
-            if (tt != tt_domain_size) {
-                fprintf(stderr, "Row %d in %s has incorrect number of columns: %d expected %d\n", mt, filename.c_str(), tt, tt_domain_size);
-                exit(-1);
+            if (col != ncols) {
+                fprintf(stderr, "Row %d in %s has incorrect number of columns: %d expected %d\n", row, filename.c_str(), col, ncols);
+                return(-1);
             }
-            mt++;
+            row++;
         }
-        if (mt != mt_domain_size) {
-            fprintf(stderr, "File %s has incorrect number of rows: %d expected %d\n", filename.c_str(), mt, mt_domain_size);
-            exit(-1);
+        if (row != nrows) {
+            fprintf(stderr, "File %s has incorrect number of rows: %d expected %d\n", filename.c_str(), row, nrows);
+            return(-1);
         }
 
         fclose(f);
     
         // check rows sum to 1
-        for (int mt = 0; mt < mt_domain_size; mt++) {
+        if (row_sum_check)
+        for (int row = 0; row < nrows; row++) {
             long double row_sum = 0;
-            for (int tt = 0; tt < tt_domain_size; tt++) {
-                row_sum += pr_tt_given_mt[mt][tt];
-            }
+            for (int col = 0; col < ncols; col++)
+                row_sum += data[row][col];
             if (abs(row_sum - 1.0) > 1e-12) {
-                fprintf(stderr, "Row %d does not sum to 1 in %s: %Lf\n", mt, filename.c_str(), row_sum);
-                exit(-1);
+                fprintf(stderr, "Row %d does not sum to 1 in %s: %Lf\n", row, filename.c_str(), row_sum);
+                return(-1);
             }
         }
+
+        return(0);
     }
 
     /*
@@ -386,49 +398,6 @@ private:
         if (num_yellow == 0)   // in this incantation of ARREST7, it is possible to get Orange on first visit, so spoof YO
             num_yellow = 1;
 
-        /*
-            // Pr(mt < 17 | tt) from explore_zest2.Rdata tree, fp = 15%, fn = 3%
-            // sums to 1 
-            // tts <- -10:40
-        const double p_mt_less_17_given_tt[tt_domain_size] = {
-            0.888009671781327, 0.887996999855932, 0.88797658380317, 0.887944181834442, 0.88789341925214, 0.887814749021518,
-            0.887693899392143, 0.887509568863368, 0.88723004208259, 0.886808290514487, 0.88617496783034, 0.885228464525855,
-            0.883820772357561, 0.88173724193529, 0.878667373714489, 0.874162767107031, 0.86757803434934, 0.857992782590626,
-            0.844121331584826, 0.824236593427796, 0.796168004519791, 0.757471691084943, 0.705882587913278, 0.640089644291158,
-            0.560688042708301, 0.470908575167922, 0.376595346652683, 0.285126862204609, 0.20355081757534, 0.131734712892062,
-            0.0732951071925254, 0.0341575934505829, 0.013168896092116, 0.00437620532795637, 0.00144659787727645, 0.000584745366474192,
-            0.000309957927648905, 0.000193270929237088, 0.000124684485687607, 7.51155545373562e-05, 3.96459560318894e-05,
-            1.97091216399926e-05, 1.23512140801215e-05, 1.08551516760895e-05, 1.0718629487125e-05, 1.07142383532889e-05, 1.0714189111264e-05,
-            1.07141882840153e-05, 1.07141882752436e-05, 1.07141882752302e-05, 1.07141882752302e-05};
-        */
-            
-            // Pr(mt < 17 | tt) from explore_zest3.Rdata tree, fp = 15%, fn = 3%, stopsd = 2.0, 16 and 0 checks added
-            // tts <- -10:40
-            // load("p_mt_given_tt.arrest20.fp15.fn3.with16s.Rdata")
-            // b <- rowSums(p_mt_given_tt[, 1:18])
-            // paste(b, collapse = ", ")
-
-        const double p_mt_less_17_given_tt[tt_domain_size] = {
-            0.86836338059554, 0.868348627279245, 0.868324833265003, 0.868287010328398,
-            0.868227622937078, 0.868135316652374, 0.867993006049671,
-            0.867775025328786, 0.867442948529128, 0.866939579959031,
-            0.866180491758084, 0.865042316308256, 0.863346735119001,
-            0.860838691940459, 0.857156820534868, 0.851793682223256,
-            0.844043977795604, 0.832942264800771, 0.817200916484196,
-            0.795177175815873, 0.764924149047822, 0.724402249889161,
-            0.671917206538843, 0.606775172245095, 0.529998743743868,
-            0.444790035769353, 0.356385786243825, 0.271139493010255,
-            0.195054578810043, 0.127209634602233, 0.0714527618226473,
-            0.033729710710922, 0.0132414219753679, 0.00451553711763321,
-            0.00153843405545678, 0.000630750909959718, 0.000329177536993211,
-            0.000200031008292419, 0.000126780441145417, 7.57140526392195e-05,
-            3.97993608413459e-05, 1.97532169677245e-05, 1.23728708079985e-05,
-            1.08731461787354e-05, 1.07362320253233e-05, 1.07318012797138e-05,
-            1.07317476533461e-05, 1.07317466186881e-05, 1.073174660761e-05,
-            1.0731746607593e-05, 1.0731746607593e-05};
-
-
-
         double *p, pp = -1;
         p = &pp;
 
@@ -440,7 +409,7 @@ private:
                 *p = 0;
                 for (int i = 0 ; i < tt_domain_size ; i++) {
                     *p += 1.0 / tt_domain_size *
-                        p_mt_less_17_given_tt[i] *
+                        pr_mtlt17_given_tt[0][i] *
                         pr_not_see_16_twice[i] *
                         std::pow(pr_not_see_0_twice[i], num_orange) *
                         std::pow(1 - pr_not_see_0_twice[i], num_yellow - 1);
@@ -451,7 +420,7 @@ private:
             *p = 0;
             for (int i = 0 ; i < tt_domain_size ; i++) {
                 *p += tt_prior[i] * 
-                    p_mt_less_17_given_tt[i] *
+                    pr_mtlt17_given_tt[0][i] *
                     pr_not_see_16_twice[i] *
                     std::pow(pr_not_see_0_twice[i], num_orange) *
                     std::pow(1 - pr_not_see_0_twice[i], num_yellow - 1);
