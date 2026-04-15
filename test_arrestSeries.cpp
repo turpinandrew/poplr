@@ -12,6 +12,7 @@
 using namespace std;
 
 Series s1 {
+    {1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
     {30, 30, 30, 30, 30, 30, 30, 30, 30, 30},
     {30, 30, 30, 30, 30, 30, 30, 30, 30, 30},
     {30, 30, 30, 30, 30, 30, 30, 30, 30, 30},
@@ -29,6 +30,7 @@ Series a1 {
 
     // hippos end in Red
 Series s2 {
+    {1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
     {30, 30, 30, 30, 30, 30, 30, 30, 30, 30},
     {30, 30, 30, 30, 30, 30, 30, 30, 30, 30},
     {30, 30, 30, 30, 30, 30, 30, 30, 30, 30},
@@ -45,6 +47,7 @@ Series a2 {
 
     // all Yellow
 Series s3 {
+    {1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
     {30, 30, 30, 30, 30, 30, 30, 30, 30, 30},
     {30, 30, 30, 30, 30, 30, 30, 30, 30, 30},
     {30, 30, 30, 30, 30, 30, 30, 30, 30, 30},
@@ -61,6 +64,7 @@ Series a3 {
 
     // degenerate
 Series s4 {
+    {1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
     {30, Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10)},
     {30, Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10)},
     {30, Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10), Y(10)},
@@ -72,6 +76,7 @@ Series a4 {};
 
     // G G G Y Y Y 
 Series s5 {
+    {1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
     {30, 30, 30, 30, 30, 30, 30, 30, 30, 30},
     {30, 30, 30, 30, 30, 30, 30, 30, 30, 30},
     {16, 16, 16, 16, 16, Y(16), Y(16), Y(16), Y(16), Y(16)},
@@ -88,6 +93,7 @@ Series a5 {
 };
 
 Series s6 {
+    {1, 2, 3, 4, 5, 6},
     {30, 30, 30, Y(14), O(14), -999},
     {25, 25, 25, Y(14), O(14), -999},
     {20, 20, 20, Y(14), O(14), -999},
@@ -96,11 +102,25 @@ Series s6 {
 };
 
 Series s7 {
+    {1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+    {NAN, 30, 30, 30, 30, 30, 30, 30, 30, 30},
+    {NAN, 30, 30, 30, 30, 30, 30, 30, 30, 30}
+};
+
+Series a7 {
     {NAN, 30, 30, 30, 30, 30, 30, 30, 30, 30},
     {NAN, 30, 30, 30, 30, 30, 30, 30, 30, 30}
 };
 
 Series s8 {
+    {1, 2, 3, 4, 5, 6, 7, 8, 9},
+    {29, 28, 27, 26, 25, 24, 23, 22, 21},
+    {NAN, 30, 30, 30, 30, 30, 30, 30, 30},
+    {NAN, NAN, 29, 30, 30, 30, 30, 30, 30},
+    {NAN, NAN, NAN, 30, 30, 30, 30, 30, 30}
+};
+
+Series a8 {
     {29, 28, 27, 26, 25, 24, 23, 22, 21},
     {NAN, 30, 30, 30, 30, 30, 30, 30, 30},
     {NAN, NAN, 29, 30, 30, 30, 30, 30, 30},
@@ -388,18 +408,26 @@ void tester(Series s, Series a, double expected_pp,
     //PermutationIterator pi(25, 10);
     //for (auto p = pi.next(); pi.hasNext(); p = pi.next()) print("perm", p);
 
+    vector<double> xs = get_xs(&s);  // strip off xs
+
     cout << "\n****** " << header << endl;
     ArrestSeries *as = new ArrestSeries(s, ArrestSeries::ArrestProcessType::ARREST_WITH_PROBS, filename, filename17);
 
     bool pass = abs(as->get_min_p() - expected_pp) < 0.00001;
+
+    cout << (pass ?  "Pass Prob" : "Fail Prob") << endl;
+
     pass &= as->get_series().size() == a.size();
+
+    cout << (pass ?  "Pass Size" : "Fail Size") << endl;
     
     if (pass)
         for(int i = 0 ; i < a.size() ; i++)
             for(int j = 0 ; j < a[i].size() ; j++)
-                pass &= a[i][j] == as->get_series()[i][j];
+                pass &= (a[i][j] == as->get_series()[i][j]) || (isnan(a[i][j]) && isnan(as->get_series()[i][j]));
 
-    cout << (pass ?  "Pass Prob phase" : "Fail Prob phase") << endl;
+    cout << (pass ?  "Pass Values" : "Fail Values") << endl;
+
     if (!pass) {
         cout << "Size as: " << as->get_series().size() << endl;
         print("s ", as->get_series());
@@ -412,21 +440,24 @@ void tester(Series s, Series a, double expected_pp,
     print("pr yrs:", as->get_pr_yrs());
     print("For PoPLR:", as->get_series());
 
-    cout << "PoPLR on all greens Horizontal: p = " << PoPLR4(as->get_series(), 5000, 0) << endl;
-    cout << "PoPLR on all greens Vertical  : p = " << PoPLR5(as->get_series(), 5000, 0) << endl;
-    cout << "PoPLR on all greens Ignore    : p = " << PoPLR6(as->get_series(), 5000, 0) << endl;
+    s = as->get_series();
+    s.insert(s.begin(), xs); // put the xs back again
+
+    cout << "PoPLR on all greens Horizontal: p = " << PoPLR4(s, 5000, 0) << endl;
+    cout << "PoPLR on all greens Vertical  : p = " << PoPLR5(s, 5000, 0) << endl;
+    cout << "PoPLR on all greens Ignore    : p = " << PoPLR6(s, 5000, 0) << endl;
 }
 
 
 int main() {
     tester(s1, a1, 1, "s1 ", "arrest11_fp15_fn03_pr_tt_given_mt.csv", "arrest11_fp15_fn03_pr_mtlt17_given_tt.csv");
     tester(s2, a2, 9.10979e-16, "s2 ", "arrest11_fp15_fn03_pr_tt_given_mt.csv", "arrest11_fp15_fn03_pr_mtlt17_given_tt.csv");
-    tester(s3, a3, 1, "s3 ", "arrest11_fp15_fn03_pr_tt_given_mt.csv", "arrest11_fp15_fn03_pr_mtlt17_given_tt.csv");
-    tester(s4, a4, 1, "s4 ", "arrest11_fp15_fn03_pr_tt_given_mt.csv", "arrest11_fp15_fn03_pr_mtlt17_given_tt.csv");
+    tester(s3, a3, 1,     "s3 ", "arrest11_fp15_fn03_pr_tt_given_mt.csv", "arrest11_fp15_fn03_pr_mtlt17_given_tt.csv");
+    tester(s4, a4, 1,     "s4 ", "arrest11_fp15_fn03_pr_tt_given_mt.csv", "arrest11_fp15_fn03_pr_mtlt17_given_tt.csv");
     tester(s5, a5, 5e-05, "s5 ", "arrest11_fp15_fn03_pr_tt_given_mt.csv", "arrest11_fp15_fn03_pr_mtlt17_given_tt.csv");
     tester(s6, a4, 3e-10, "s6 ", "arrest11_fp15_fn03_pr_tt_given_mt.csv", "arrest11_fp15_fn03_pr_mtlt17_given_tt.csv");
-    tester(s7, s7, 3e-10, "s7 ", "arrest11_fp15_fn03_pr_tt_given_mt.csv", "arrest11_fp15_fn03_pr_mtlt17_given_tt.csv");
-    tester(s8, s8, 3e-10, "s8 ", "arrest11_fp15_fn03_pr_tt_given_mt.csv", "arrest11_fp15_fn03_pr_mtlt17_given_tt.csv");
+    tester(s7, a7, 1    , "s7 ", "arrest11_fp15_fn03_pr_tt_given_mt.csv", "arrest11_fp15_fn03_pr_mtlt17_given_tt.csv");
+    tester(s8, a8, 1    , "s8 ", "arrest11_fp15_fn03_pr_tt_given_mt.csv", "arrest11_fp15_fn03_pr_mtlt17_given_tt.csv");
 
     /*
 

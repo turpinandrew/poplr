@@ -21,7 +21,7 @@ test_arrestSeries: test_arrestSeries.o
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-poplr_arrest.o: poplr_arrest.hpp arrestSeries.hpp
+poplr_arrest.o: poplr_arrest.hpp arrestSeries.hpp read_json.hpp
 
 test_arrestSeries.o: poplr_arrest.hpp arrestSeries.hpp
 

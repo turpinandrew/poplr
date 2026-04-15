@@ -13,10 +13,10 @@ void usage() {
     cerr << "           -c n restrict permutation count to n (default 5000 or visit!)." << endl;
     cerr << "           -V uses vertical grouping. (default uses vertical grouping)." << endl;
     cerr << "           -H uses horizontal grouping. (default uses vertical grouping)." << endl;
-    cerr << "           -I uses independent grouping. (default uses vertical grouping)." << endl;
-    cerr << "           -d db_treatment is 0 = Not arrest (no converting values, use every line)." << endl;
+    cerr << "           -I uses no grouping (ignores NAs in regressions). (default uses vertical grouping)." << endl;
+    cerr << "           -d db_treatment is 0 = Not arrest (no converting values, use every location)." << endl;
     cerr << "                           1 = ARREST with probs (convert values, apply PLR to," << endl;
-    cerr << "                               Green lines, special probs to others)." << endl;
+    cerr << "                               all-Green locations, special probs to others)." << endl;
     cerr << "                           2 = ARREST no probs (convert values, only all-Green locations)." << endl;
     cerr << "                          (default = 0)." << endl;
     cerr << "           -s slope_limit Only include p-values in S statistic when PLR slope is < slope_limit." << endl;
@@ -32,17 +32,19 @@ void usage() {
     cerr << "        P(mt<17|tt) file is a csv, one row, one column per tt." << endl;
     cerr << endl;
     cerr << "        JSON file is [[" << endl;
-    cerr << "                        [ // VF 1" << endl;
+    cerr << "                        [ // rep 1" << endl;
+    cerr << "                           [x1, x2, ..., x_n]," << endl;
     cerr << "                           [loc_1_visit1, loc_1_visit_2, ..., loc_1_visit_n]," << endl;
     cerr << "                           [loc_2_visit1, loc_2_visit_2, ..., loc_2_visit_n]," << endl;
     cerr << "                            ..." << endl;
     cerr << "                           [loc_n_visit1, loc_n_visit_2, ..., loc_n_visit_n]" << endl;
     cerr << "                        ]," << endl;
-    cerr << "                        [ // VF 2" << endl;
+    cerr << "                        [ // rep 2" << endl;
+    cerr << "                           [x1, x2, ..., x_n]," << endl;
     cerr << "                           [loc_1_visit1, loc_1_visit_2, ..., loc_1_visit_n]," << endl;
     cerr << "                           [loc_2_visit1, loc_2_visit_2, ..., loc_2_visit_n]," << endl;
     cerr << "                           ..." << endl;
-    cerr << "                           [loc_n_visit1, loc_n_visit_2, ..., loc_n_visit_n]]," << endl;
+    cerr << "                           [loc_n_visit1, loc_n_visit_2, ..., loc_n_visit_n]" << endl;
     cerr << "                        ], ..." << endl;
     cerr << "                     ]]" << endl;
     cerr << endl;
@@ -165,7 +167,9 @@ int main(int argc, char *argv[]) {
     for (int i_eye = 0 ; i_eye < eyes.size(); i_eye++) {
         for (int i_rep = 0 ; i_rep < eyes[i_eye].size(); i_rep++) {
             for (int visit = eyes[i_eye][i_rep][0].size(); visit >= 6; visit--) {
+//print("series before preProcess", eyes[i_eye][i_rep]);
                 Series series = preProcess(eyes[i_eye][i_rep], visit);
+//print("series after preProcess", series);
                 ArrestSeries *as = new ArrestSeries(series, arrest, pr_tt_given_mt_filename, pr_mtlt17_given_tt_filename);
 //cout << as->get_min_p() << endl;
 //print("greens", as->get_series());

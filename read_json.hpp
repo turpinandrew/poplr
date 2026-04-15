@@ -15,13 +15,15 @@ Read in JSON file that has series of VFs. Format is
 [                   # whole lot
   [                   # begin eye 1
     [                   # begin repeat 1
+      [0, x1, x2],        # list of x values for this eye
       [20,19,18],         # location 1  (length "num_visits")
       [20,19,18]          # location 2
     ],
-    [
-        [21,19,18],     # begin repeat 2
-        [21,19,18]        # location 1
-    ]                     # location 2
+    [                   # begin repeat 2
+        [0, x1, x2],      # list of x values for this eye
+        [21,19,18],       # location 1
+        [21,19,18]        # location 2
+    ]                  
   ],
   [ eye 2...]
 ]
@@ -34,7 +36,7 @@ Assumes no negative numbers.
 vector<Eye> read_json(const string& filename) {
     FILE *file = fopen(filename.c_str(), "r");
 
-    vector<Eye> eyes;
+    vector<Eye> eyes = vector<Eye>();
 
     #define ADD_NUM {\
         eyes[eye][ser][loc].push_back(sign * num); \
@@ -63,7 +65,7 @@ vector<Eye> read_json(const string& filename) {
             }};
         } else if (ch == ']') {
             switch (state) { 
-            case 0: { cout << "parse ERROR [" << endl; break;}
+            case 0: { cout << "parse ERROR [" << endl; break; }
             case 1: { state--; break; }
             case 2: { state--; break; }
             case 3: { state--; break; }

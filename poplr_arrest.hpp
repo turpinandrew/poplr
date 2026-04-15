@@ -117,16 +117,18 @@ Series preProcess(Series series, int num_visits) {
     This version partitions columns based on NaNs at the start of rows.
     ASSUMES: locations have at least 6 non-NaN values in their row.
 
-    @param series A matrix of dB values; rows are locations, columns are visits
+    @param series A matrix of dB values; rows are locations, columns are visits. First row is x values.
     @param perm_count Number of permutations of series to get p-value for S
     @param slope_limit Only include p-values in S statistic when PLR slope is <= slope_limit
 
     @return Estimated probability of stability of the series
 */
 double PoPLR4(Series series, int perm_count, double slope_limit) {
-    int num_locations = series.size();
+    int num_locations = series.size() - 1; // leading xs
     if (num_locations < 2) 
         return 1.0;
+
+    vector<double> xs = get_xs(&series);
 
     int num_visits = series[0].size();
 
@@ -146,26 +148,26 @@ double PoPLR4(Series series, int perm_count, double slope_limit) {
         n[loc] = 0;
         y_skip[loc] = 0;
         ybar[loc]= 0.0;
-        for (double y : series[loc])
+        xbar[loc] = 0;
+        for (int i = 0 ; i < num_visits; i++) {
+            double y = series[loc][i];
             if (isnan(y))
                 y_skip[loc]++;
             else {
                 ybar[loc] += y;
                 n[loc]++;
+                xbar[loc] += xs[i];
             }
+        }
 
         ybar[loc] /= (double)n[loc];
+        xbar[loc] /= (double)n[loc];
 
         for (double y : series[loc])
             yds[loc].push_back(y - ybar[loc]);
 
-        xbar[loc] = 0;
-        for (int x = 1 ; x <= n[loc]; x++)
-            xbar[loc] += x;
-        xbar[loc] /= (double)n[loc];
-
-        for (int x = 1 ; x <= n[loc]; x++)
-            sumXdSq[loc] += (x - xbar[loc]) * (x - xbar[loc]);
+        for (int i = y_skip[loc] ; i < num_visits; i++)
+            sumXdSq[loc] += (xs[i] - xbar[loc]) * (xs[i] - xbar[loc]);
 
         sqrtSumXdSq[loc] = sqrt((long double)sumXdSq[loc]);
     }
@@ -190,22 +192,22 @@ double PoPLR4(Series series, int perm_count, double slope_limit) {
 //cout << "num_locations " << num_locations << endl;
         for (int loc = 0; loc < num_locations; loc++) {
             long double beta = 0;
-            for (int x = 1 ; x <= num_visits ; x++) {
-                int ip = perm[x - 1];
+            for (int i = 1 ; i <= num_visits ; i++) {
+                int ip = perm[i - 1];
                 if (ip - 1 < y_skip[loc]) continue; // skip the NaN values
-                beta += (x - xbar[loc]) * yds[loc][ip - 1];
-//cout << "x= " << x << " ip= " << ip << " yd= " << yds[loc][ip - 1] << endl;
+                beta += (xs[i - 1] - xbar[loc]) * yds[loc][ip - 1];
+//cout << "x= " << i << " ip= " << ip << " yd= " << yds[loc][ip - 1] << endl;
             }
             beta /= sumXdSq[loc];
 
             long double alpha = ybar[loc] - beta * xbar[loc];
 
             long double sse = 0, se, t;
-            for (int x = 1 ; x <= num_visits ; x++) {
-                int ip = perm[x - 1];
+            for (int i = 1 ; i <= num_visits ; i++) {
+                int ip = perm[i - 1];
                 if (ip - 1 < y_skip[loc]) continue; // skip the NaN values
-                sse += (series[loc][ip - 1] - alpha - beta * x) * 
-                       (series[loc][ip - 1] - alpha - beta * x);
+                sse += (series[loc][ip - 1] - alpha - beta * xs[i - 1]) * 
+                       (series[loc][ip - 1] - alpha - beta * xs[i - 1]);
             }
 //cout << "beta " << beta << " alpha " << alpha << " sse " << sse;
 
@@ -259,7 +261,7 @@ double PoPLR4(Series series, int perm_count, double slope_limit) {
     @return Estimated probability of stability of the series
 */
 double PoPLR5(Series series, int perm_count, double slope_limit) {
-    int num_locations = series.size();
+    int num_locations = series.size() - 1;  // leading xs
 
         // Work out number of leading NaNs (skips)
     vector<int> nan_count(num_locations);    // number of leading NaNs
@@ -267,7 +269,7 @@ double PoPLR5(Series series, int perm_count, double slope_limit) {
 
     for (int loc = 0; loc < num_locations; loc++) {
         nan_count[loc] = 0;
-        for (double y : series[loc])
+        for (double y : series[loc + 1])  // skip xs
             if (isnan(y))
                 nan_count[loc]++;
         nan_count_set.insert(nan_count[loc]);
@@ -275,10 +277,12 @@ double PoPLR5(Series series, int perm_count, double slope_limit) {
 
     double minP = 1.0; // default stable
     for (int count : nan_count_set) {
-        vector<vector<double>> sub_series;
+        Series sub_series;
+        sub_series.push_back(series[0]);  // xs
+
         for (int loc = 0; loc < num_locations; loc++) {
             if (nan_count[loc] == count)
-                sub_series.push_back(series[loc]);
+                sub_series.push_back(series[loc + 1]);  // skip xs
         }
         int num_visits = sub_series[0].size() - count;
 
@@ -308,26 +312,17 @@ double PoPLR5(Series series, int perm_count, double slope_limit) {
     @return Estimated probability of stability of the series
 */
 double PoPLR6(Series series, int perm_count, double slope_limit) {
-    int num_locations = series.size();
+    int num_locations = series.size() - 1;  // xs are first
+//cout << "num_locations " << num_locations << endl;
     if (num_locations < 2) 
         return 1.0;
+
+    vector<double> xs = get_xs(&series);
 
     int num_visits = series[0].size();
 
     if (perm_count > tgamma(num_visits + 1))
         perm_count = tgamma(num_visits + 1);
-
-        // Work out the x* for locations without NaNs
-    double xbar_all = 0;
-    for (int x = 1 ; x <= num_visits; x++)
-        xbar_all += x;
-    xbar_all /= (double)num_visits;
-
-    double sumXdSq_all = 0;
-    for (int x = 1 ; x <= num_visits; x++)
-        sumXdSq_all += (x - xbar_all) * (x - xbar_all);
-
-    double sqrtSumXdSq_all = sqrt(sumXdSq_all);
 
         // Work out ybar, yds values for all locations (excluding NaNs)
         // Also record which locs have NaNs
@@ -350,6 +345,19 @@ double PoPLR6(Series series, int perm_count, double slope_limit) {
         for (double y : series[loc])
             yds[loc].push_back(y - ybar[loc]);
     }
+//print("ybars", ybar);
+
+        // Work out the x* for locations without NaNs
+    double xbar_all = 0;
+    for (double x : xs) 
+        xbar_all += x;
+    xbar_all /= (double)num_visits;
+
+    double sumXdSq_all = 0;
+    for (double x : xs)
+        sumXdSq_all += (x - xbar_all) * (x - xbar_all);
+
+    double sqrtSumXdSq_all = sqrt(sumXdSq_all);
 
     // Now compute all the p-values for each loc in each appropriate permutation
     vector<long double> S;
@@ -360,28 +368,27 @@ double PoPLR6(Series series, int perm_count, double slope_limit) {
         vector<int> perm = pi.next();
         perm_count++;
 //print("perm:", perm);
-
         for (int loc = 0; loc < num_locations; loc++) {
                 // (1) get the n and X values for this location
             int n;
             double xbar = 0, sumXdSq = 0, sqrtSumXdSq;
             if (has_NaNs[loc]) {
                 n = 0;
-                for (int x : perm) {
-                    if (!isnan(series[loc][x - 1])) {
-                        xbar += x;
+                for (int i_x : perm) {
+                    if (!isnan(series[loc][i_x - 1])) {
+                        xbar += xs[i_x - 1];
                         n++;
                     }
                 }
                 xbar /= (double)n;
 
-                for (int x : perm)
-                    if (!isnan(series[loc][x - 1]))
-                        sumXdSq += (x - xbar) * (x - xbar);
+                for (int i_x : perm)
+                    if (!isnan(series[loc][i_x - 1]))
+                        sumXdSq += (xs[i_x - 1] - xbar) * (xs[i_x - 1] - xbar);
                 
                 sqrtSumXdSq = sqrt(sumXdSq);
             } else {
-                n = num_locations;
+                n = num_visits;
                 xbar = xbar_all;
                 sumXdSq = sumXdSq_all;
                 sqrtSumXdSq = sqrtSumXdSq_all;
@@ -394,11 +401,11 @@ double PoPLR6(Series series, int perm_count, double slope_limit) {
 
                 // (2) Compute beta, alpha, etc
             long double beta = 0;
-            for (int x = 1 ; x <= num_visits ; x++) {
-                int ip = perm[x - 1];
+            for (int ix = 1 ; ix <= num_visits ; ix++) {
+                int ip = perm[ix - 1];
                 if (!isnan(series[loc][ip - 1])) {
-                    beta += (x - xbar) * yds[loc][ip - 1];
-//cout << "x= " << x << " ip= " << ip << " yd= " << yds[loc][ip - 1] << endl;
+                    beta += (xs[ix - 1] - xbar) * yds[loc][ip - 1];
+//cout << "ix= " << ix << " ip= " << ip << " x= " << xs[ix - 1] << " y=" << series[loc][ip - 1] << " ybar= " << ybar[loc] << " yd= " << yds[loc][ip - 1] << endl;
                 }
             }
             beta /= sumXdSq;
@@ -406,12 +413,13 @@ double PoPLR6(Series series, int perm_count, double slope_limit) {
             long double alpha = ybar[loc] - beta * xbar;
 
             long double sse = 0, se, t;
-            for (int x = 1 ; x <= num_visits ; x++) {
-                double y = series[loc][perm[x - 1] - 1];
+            for (int ix = 1 ; ix <= num_visits ; ix++) {
+                int ip = perm[ix - 1];
+                double y = series[loc][ip - 1];
                 if (!isnan(y))
-                    sse += (y - alpha - beta * x) * (y - alpha - beta * x);
+                    sse += (y - alpha - beta * xs[ix - 1]) * (y - alpha - beta * xs[ix - 1]);
             }
-//cout << "beta " << beta << " alpha " << alpha << " sse " << sse;
+//cout << "beta " << beta << " alpha " << alpha << " sse " << sse << " n " << n;
 
             if (beta >= slope_limit) {
                 p_vals[loc] = 1.0; // t -> Inf, no contribution to S
@@ -435,6 +443,7 @@ double PoPLR6(Series series, int perm_count, double slope_limit) {
         S.push_back(temp);
     }
 
+//cout <<  "S[0] " << S[0] << endl;
 //print("S", S);
     int less_than = 0, equal = 0;
     for(int i = 1; i < S.size(); i++) {
