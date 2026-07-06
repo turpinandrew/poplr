@@ -120,10 +120,11 @@ Series preProcess(Series series, int num_visits) {
     @param series A matrix of dB values; rows are locations, columns are visits. First row is x values.
     @param perm_count Number of permutations of series to get p-value for S
     @param slope_limit Only include p-values in S statistic when PLR slope is <= slope_limit
+    @param verbose Flag for verbose printing
 
     @return Estimated probability of stability of the series
 */
-double PoPLR4(Series series, int perm_count, double slope_limit) {
+double PoPLR4(Series series, int perm_count, double slope_limit, bool verbose = false) {
     int num_locations = series.size() - 1; // leading xs
     if (num_locations < 2) 
         return 1.0;
@@ -225,6 +226,12 @@ double PoPLR4(Series series, int perm_count, double slope_limit) {
 //cout << " p " << p_vals[loc] << endl;
         }
 
+        if (verbose && perm_count == 1) {
+                // csv of location,p for actual ps (ie perm 0)
+            //cerr << "Given pvalues: " << endl;
+            for (int i = 0 ; i < p_vals.size(); i++)
+                cerr << i << "," << p_vals[i] << endl;
+        }
 //cout << "ps: "; for (double p : p_vals) cout << p << " "; cout << endl;
             // Now compute the S value for this permutation
         long double temp = 0.0;
@@ -257,10 +264,11 @@ double PoPLR4(Series series, int perm_count, double slope_limit) {
     @param series A matrix of dB values; rows are locations, columns are visits
     @param perm_count Number of permutations of series to get p-value for S
     @param slope_limit Only include p-values in S statistic when PLR slope is <= slope_limit
+    @param verbose Flag for verbose printing
 
     @return Estimated probability of stability of the series
 */
-double PoPLR5(Series series, int perm_count, double slope_limit) {
+double PoPLR5(Series series, int perm_count, double slope_limit, bool verbose = false) {
     int num_locations = series.size() - 1;  // leading xs
 
         // Work out number of leading NaNs (skips)
@@ -293,7 +301,7 @@ double PoPLR5(Series series, int perm_count, double slope_limit) {
             perm_count = tgamma(num_visits + 1);
 
         if (sub_series.size() > 0) {
-            double p = PoPLR4(sub_series, perm_count, slope_limit);
+            double p = PoPLR4(sub_series, perm_count, slope_limit, verbose);
             if (p < minP) 
                 minP = p;
         }
@@ -308,10 +316,11 @@ double PoPLR5(Series series, int perm_count, double slope_limit) {
     @param series A matrix of dB values; rows are locations, columns are visits
     @param perm_count Number of permutations of series to get p-value for S
     @param slope_limit Only include p-values in S statistic when PLR slope is <= slope_limit
+    @param verbose Flag for verbose printing
 
     @return Estimated probability of stability of the series
 */
-double PoPLR6(Series series, int perm_count, double slope_limit) {
+double PoPLR6(Series series, int perm_count, double slope_limit, bool verbose = false) {
     int num_locations = series.size() - 1;  // xs are first
 //cout << "num_locations " << num_locations << endl;
     if (num_locations < 2) 
@@ -435,7 +444,13 @@ double PoPLR6(Series series, int perm_count, double slope_limit) {
 //cout << " p " << p_vals[loc] << endl;
         }
 
-//cout << "ps: "; for (double p : p_vals) cout << p << " "; cout << endl;
+        if (verbose && perm_count == 1) {
+                // csv of location,p for actual ps (ie perm 0)
+            //cerr << "Given pvalues: " << endl;
+            for (int i = 0 ; i < p_vals.size(); i++)
+                cerr << i << "," << p_vals[i] << endl;
+        }
+
             // Now compute the S value for this permutation
         long double temp = 0.0;
         for (long double p : p_vals)

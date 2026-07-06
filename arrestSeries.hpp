@@ -27,6 +27,16 @@ public:
         ARREST_NO_PROBS = 3      // Treat seqs ending in non-green as stable
     };
 
+        // mt's are -1:38
+    static const int mt_domain_size = 37;
+    static const int mt_domain_min = -1;
+    static const int mt_domain_max = 35;
+
+        // tt's are -10:40
+    static const int tt_domain_size = 51;
+    static const int tt_domain_min = -10;
+    static const int tt_domain_max = 40;
+
     /*
         @param series A matrix of dB or ARREST values.
         @param type If type == NOT_ARREST, do nothing, else call process
@@ -166,16 +176,6 @@ private:
     double pnorm(float x, float mean, float sd) {
         return 0.5 * (1 + std::erf((x - mean) / (sd * (float)std::sqrt(2))));
     }
-
-        // mt's are -1:38
-    static const int mt_domain_size = 37;
-    static const int mt_domain_min = -1;
-    static const int mt_domain_max = 35;
-
-        // tt's are -10:40
-    static const int tt_domain_size = 51;
-    static const int tt_domain_min = -10;
-    static const int tt_domain_max = 40;
 
         // Assumes not fp or fn, using Henson combined sd
         // Pr (not seeing  0 | tt in -10, -9, ..., 40, fpr=0%, fnr=0%)^2 = pr_not_see_0_twice[tt + 10]
