@@ -1,5 +1,6 @@
 # Compiler
-CXX = /opt/homebrew/Cellar/gcc/15.2.0_1/bin/g++-15 
+#CXX = /opt/homebrew/Cellar/gcc/15.2.0_1/bin/g++-15 
+CXX = /opt/homebrew/Cellar/gcc/16.2.0/bin/g++-16
 
 # Compiler flags
 CXXFLAGS = -Wc++11-extensions -std=c++14 -O3 -I /opt/homebrew/include/

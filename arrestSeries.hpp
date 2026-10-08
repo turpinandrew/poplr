@@ -77,6 +77,17 @@ public:
     vector<pair<double, int>> get_pr_yrs() { return pr_yrs; }
 
     /*
+        Print the location,p in pr_yrs and pr_gys.
+    */
+    void print_ps() {
+        //cerr << "HI: " << pr_gys.size() << " " << pr_yrs.size() << endl;
+        for (auto& pr : pr_gys)
+            cerr << pr.second << "," << pr.first << endl;
+        for (auto& pr : pr_yrs)
+            cerr << pr.second << "," << pr.first << endl;
+    }
+
+    /*
         Test out the probability functions.
     */
     void test() {
@@ -126,14 +137,12 @@ private:
         vector<int> old_location_numbers(series.size()); // index into the original series locations/rows
         for (int loc = 0; loc < num_locations; loc++)
             old_location_numbers[loc] = loc;
-
         for (int loc = 0; loc < num_locations; ) {
             Location &loc_series = series[loc];
             bool keep = 1;
             if (type == ArrestProcessType::ARREST_NO_PROBS) {
                 keep = is_green(loc_series.back());
             } else if (type == ArrestProcessType::ARREST_WITH_PROBS) {
-
                     // strip any leading NaNs
                 int front;
                 for ( front = 0; front < loc_series.size() && isnan(loc_series[front]) ; front++);

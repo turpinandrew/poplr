@@ -22,8 +22,8 @@ void usage() {
     cerr << "                              2 = ARREST no probs (convert values, only all-Green locations)." << endl;
     cerr << "                             (default = 0)." << endl;
     cerr << "           -s slope_limit Only include p-values in S statistic when PLR slope is < slope_limit." << endl;
-    cerr << "                          (default = 0)." << endl;
-    cerr << "           -v Flag for verbose printing (default false)." << endl;
+    cerr << "                          (default = Inf)." << endl;
+    cerr << "           -v Flag for verbose printing on stderr (default false)." << endl;
     cerr << "          tt_file is a csv file containing P(tt|mt): one row per mt (" << ArrestSeries::mt_domain_size << " rows ";
     cerr << ArrestSeries::mt_domain_min << ":" << ArrestSeries::mt_domain_max << "), one column per tt (";
     cerr << ArrestSeries::tt_domain_size << " cols, " << ArrestSeries::tt_domain_min << ":" << ArrestSeries::tt_domain_max << ")." << endl;
@@ -121,7 +121,7 @@ int main(int argc, char *argv[]) {
     int max_perm_count = 5000;                       // for -c
     function<double(Series, int, double, bool)> PoPLR = PoPLR4;    // for -H  or -I
     ArrestSeries::ArrestProcessType arrest = ArrestSeries::ArrestProcessType::NOT_ARREST; // for -d
-    double slope_upper_limit = 0;  // for -s
+    double slope_upper_limit = numeric_limits<double>::infinity();  // for -s
     bool verbose = false;
     string filename;
     string pr_tt_given_mt_filename;
@@ -187,6 +187,8 @@ int main(int argc, char *argv[]) {
 //print("greens", as->get_series());
                 double poplr_p = PoPLR(as->get_series(), max_perm_count, slope_upper_limit, verbose);
                 double other_ps = as->get_min_p();
+                if (verbose)
+                    as->print_ps();
                 #pragma omp critical
                 {
                 cout << i_eye << "," << i_rep << "," << visit << ",";

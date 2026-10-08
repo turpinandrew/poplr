@@ -519,6 +519,71 @@ print(paste("beta", beta, "alpha", alpha))
     return(list(p = 1 - pp / perm_count, ss = S_values))
 }
 
+#' Standard PoPLR that just uses NAs as they occur.
+#' If arrest = TRUE, exclude any locations with <= 16 at penultimate visit.
+#' Uses Abel's Lemma (Summation by parts) to factor out the x values from permutations.
+#
+#' @param series A matrix/data.frame with one row per location in the VF
+#'               and one column per visit (ordered in time so that col1 is earliest
+#'               and the final column the most recent visit)
+#'               Values in the column are dB values (either raw or Total Deviation).
+#' @param xs Time values for x-axis of regression (`ncol(series) == length(xs)`)
+#' @param threshold Only include PLR p-values less than or equal to this number in S
+#' @param perm_count Number of permutations of series to get p-value for S
+#' @param warnings TRUE for warnings from PoPLR, FALSE for not.
+#' @param arrest If TRUE, discard yellow-yellow+-Orange*-Red* locations and use zest value for Green+-Yellow locations.
+#
+#' @return list containing
+#'   * p is p-value for statistic S which tracks the false positive rate of calling this series progressing.
+#'   * ss is a vector of S values for each permutation.
+PoPLR_Abel <- function(series, xs = seq(0, ncol(series) - 1), threshold = 1, perm_count = 5000, warnings = TRUE, arrest = FALSE) {
+    stopifnot(length(xs) == ncol(series))
+    stopifnot(all(!is.na(xs)))
+
+        # Get permutation vectors for largest n
+    n <- ncol(series)
+    perms <- get_perms(n, perm_count, warnings)
+
+        # Set up x weights
+    xbar <- mean(xs)
+    xd <- xs - xbar
+    sumXdSq <- sum(xd * xd)
+    sqrtSumXdSq <- sqrt(sumXdSq)
+
+    sx <- sapply(seq_along(xs), function(k) sum((xs[seq(1, k)] - xbar)))
+    w <- sapply(seq(2, n), function(i) sx[i - 1]) / sumXdSq
+    ybar <- apply(series, 1, mean, na.rm = TRUE)
+
+        # Loop for each permutation
+    s_values <- sapply(seq_along(perms), \(i_perm) {
+        perm_series <- series[, perms[[i_perm]]]
+        beta <- unlist(apply(perm_series, 1, \(rr) sum(w * -diff(rr), na.rm = TRUE)))
+        alpha <- ybar - beta * xbar
+        res <- sapply(seq_len(nrow(perm_series)), \(i) perm_series[i, ] - alpha[i] - beta[i] * xs)  # res[residual, loc]
+        sse <- unlist(apply(res^2, 2, sum, na.rm = TRUE))
+        p <- sapply(seq_along(sse), \(loc) {
+            if (sse[loc] < 1e-10) {
+                if (beta[loc] >= 0) {
+                    1
+                } else {
+                    0
+                }
+            } else {
+                se <- sqrt(sse[loc] / (nrow(perm_series) - 2)) / sqrtSumXdSq
+                t <- beta[loc] / se
+                pt(t, nrow(series) - 2)
+            }
+        })
+        z <- p <= max(min(p, na.rm = TRUE), threshold)
+        sum(-log(p[z]), na.rm = TRUE)
+    })
+
+    others <- tail(s_values, -1)
+        # another assumption here for small discrete distributions.
+    pp <-  sum(others < s_values[[1]]) + sum(others == s_values[[1]]) / 2
+
+    list(p = 1 - pp / (length(perms) - 1), ss = s_values)
+}
 
 
 #############
@@ -534,8 +599,9 @@ print(paste("beta", beta, "alpha", alpha))
 #    cat(sprintf("\n delta = %6.4f num prog = %2s ", delta, prog))
 #    ds <- c(rep(0, length(dbs) - prog), rep(delta, prog))
 #    series <- matrix(c(dbs, dbs + ds, dbs + 2 * ds, dbs + 3 * ds), ncol = 4)
-#    p <- PoPLR(series)
-#    cat(sprintf("p = %s\n", p))
+#    p1 <- PoPLR(series)
+#    p2 <- PoPLR_fast(series)
+#    cat(sprintf("p1 = %s, p2 = %s\n", p1$p, p2$p))
 #}
 
 #s <- matrix(c(
@@ -550,8 +616,9 @@ print(paste("beta", beta, "alpha", alpha))
 # 31.545246, 33.605193, 32.355546, 32.1473103, 30.987397, 31.545246, 32.737632,
 #  6.274475, 13.429302, 11.175638,  0.2980425,  4.293997, 10.534879,  4.293997
 #), ncol = 7, byrow = TRUE)
-#print(paste("PoPLR_basic: ", PoPLR_basic(s)))
-#print(paste("PoPLR: ", PoPLR(s)))
+#print(paste("PoPLR_basic: ", PoPLR_basic(s)$p))
+#print(paste("PoPLR: ", PoPLR(s)[["p"]]))
+#print(paste("PoPLR_Abel: ", PoPLR_Abel(s)[["p"]]))
 
 #s <- matrix(c(
 #        NA,        NA, 37.441342, 38.6314074, 38.631407, 35.445228, 38.631407,
