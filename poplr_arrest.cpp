@@ -1,199 +1,243 @@
 /*
-Driver.
+** PoPLR implementation for ARREST
+
+# Based on.
+# Visual Field Progression in Glaucoma: Estimating the Overall Significance of Deterioration 
+# with Permutation Analyses of Pointwise Linear Regression (PoPLR)
+#   Neil O'Leary; Balwantray C. Chauhan; Paul H. Artes
+#   Investigative Ophthalmology & Visual Science*
+#   October 2012, Vol.53, 6776-6784. https://doi.org/10.1167/iovs.12-10049
+
+
+ Only use permutations where NAs are at the start
+ Only use locations with at least 6 visits.
+ For locations that are:
+    G.....G Apply PoPLR 
+    G..Y..R Apply pr_yellow_red_sequence
+    Y..Y..R Apply pr_yellow_red_sequence
+    Y...Y|O Apply PoPLR using last ZEST value for Y/O
+    O..Y/O  Apply PoPLR using last ZEST value for Y/O
+    G...Y|O Apply pr_green_yellow
+
+ @param series A matrix of dB values with `num_locations` rows and `num_visits` columns.
+               (ordered in time so that col1 is earliest
+               and the final column the most recent visit)
+               Use NAN to signal missing data
+ @param perm_count Number of permutations of series to get p-value for S
+
+ @return Probability series is stable  (-1 if data has too few rows or visits)
+
+
+/opt/homebrew/Cellar/gcc/14.2.0/bin/g++-14 -Wc++11-extensions -std=c++14 -I /opt/homebrew/include/ poplr_arrest.cpp -o poplr_arrest
 */
-#include "poplr_arrest.hpp"
-#include "read_json.hpp"
+#include <vector>
+#include <unordered_set>
+#include <cmath>
+#include <algorithm>
+#include <numeric>
+#include <iostream>
+#include <random>
+#include <fstream>
+#include <functional>
+#include <boost/math/distributions/students_t.hpp>
+#include <boost/container_hash/hash.hpp>
+#include "permutation.hpp"
+#include "read_utils.hpp"
+#include "poplr.hpp"
 #include "arrestSeries.hpp"
+
+//#include <_stdio.h>
+//#include <functional>
+#include <omp.h>
 
 using namespace std;
 
+/*
+    Resize matrix to have at least 2 rows and min(num_visits, max loc seq length) columns.
+    Remove locations with less than MIN_VISITS non-NaN in their row.
+
+    @param series A pair whose 1st element is list of num_visits x values (years) and 2nd element is a matrix of dB values 
+                  with at least `num_locations` rows and up to `num_visits` columns.
+    @param num_locations Number of rows in series
+    @param num_visits Max number of columns in series
+
+    @return Updated series pair or empty Series if cannot meet requirements.
+*/
+Series preProcess(Series series, int num_visits) {
+    int n = series.second.size();
+
+    if (num_visits < MIN_VISITS || n < 2)
+        return Series();
+
+        // Cap number of x values at num_visits in size (including NaNs)
+    if (series.first.size() > num_visits)
+        series.first.erase(series.first.begin() + num_visits, series.first.end());
+
+        // Cap length of each location at num_visits in size (including NaNs)
+    for (int loc = 0; loc < n; loc++)
+        if (series.second[loc].size() > num_visits)
+            series.second[loc].erase(series.second[loc].begin() + num_visits, series.second[loc].end());
+
+        // Throw out locations with less than MIN_VISITS non-nan
+    for (int loc = 0; loc < n; ) {
+        int nan_count = count_if(series.second[loc].begin(), series.second[loc].end(), [](double x){return(isnan(x));});
+        if (series.second[loc].size() - nan_count < MIN_VISITS) {
+                // swap last location up to here and shrink num_locations
+            for (int visit = 0; visit < num_visits; visit++)
+                series.second[loc][visit] = series.second[n - 1][visit];
+            n--;
+        } else
+            loc++;
+    }
+    if (n < 2) 
+        return Series();
+    else 
+        series.second.erase(series.second.begin() + n, series.second.end()); // throw away junk swapped to the end 
+
+    return series;
+}
+    
     // print usage and exit
 void usage() {
-    cerr << "Usage: poplr_arrest [-c n] [-{V | H | I}] [-d db_treatment] [-s slope_limit] -v tt_file mt_file file.json" << endl;
-    cerr << "       where" << endl;
-    cerr << "           -c n restrict permutation count to n (default 5000 or visit!)." << endl;
-    cerr << "           -g grouping " << endl;
-    cerr << "               V uses vertical grouping (default)." << endl;
-    cerr << "               H uses horizontal grouping." << endl;
-    cerr << "               I uses no grouping (ignores NAs in regressions)." << endl;
-    cerr << "           -d db_treatment is 0 = Not arrest (no converting values, use every location)." << endl;
-    cerr << "                              1 = ARREST with probs (convert values, apply PLR to," << endl;
-    cerr << "                                  all-Green locations, special probs to others)." << endl;
-    cerr << "                              2 = ARREST no probs (convert values, only all-Green locations)." << endl;
-    cerr << "                             (default = 0)." << endl;
-    cerr << "           -s slope_limit Only include p-values in S statistic when PLR slope is < slope_limit." << endl;
-    cerr << "                          (default = Inf)." << endl;
-    cerr << "           -v Flag for verbose printing on stderr (default false)." << endl;
-    cerr << "          tt_file is a csv file containing P(tt|mt): one row per mt (" << ArrestSeries::mt_domain_size << " rows ";
-    cerr << ArrestSeries::mt_domain_min << ":" << ArrestSeries::mt_domain_max << "), one column per tt (";
-    cerr << ArrestSeries::tt_domain_size << " cols, " << ArrestSeries::tt_domain_min << ":" << ArrestSeries::tt_domain_max << ")." << endl;
-    cerr << "          mt_file is a csv file containing P(mt<17|tt): one row, one column per tt (";
-    cerr << ArrestSeries::tt_domain_size << " cols, " << ArrestSeries::tt_domain_min << ":" << ArrestSeries::tt_domain_max << ")." << endl;
-    cerr << "          file.json is the JSON input file." << endl;
-    cerr << endl;
-    cerr << "        Horizontal partitioning groups rows/locations with the same number of visits." << endl;
-    cerr << "        Vertical partitioning groups columns/visits so that locations" << endl;
-    cerr << "                              all have the same number of NAs at the start." << endl;
-    cerr << "        Permuting happens within groups and group order remains the same." << endl;
-    cerr << endl;
-    cerr << "        JSON file is [[" << endl;
-    cerr << "                        [ // rep 1" << endl;
-    cerr << "                           [x1, x2, ..., x_n]," << endl;
-    cerr << "                           [loc_1_visit1, loc_1_visit_2, ..., loc_1_visit_n]," << endl;
-    cerr << "                           [loc_2_visit1, loc_2_visit_2, ..., loc_2_visit_n]," << endl;
-    cerr << "                            ..." << endl;
-    cerr << "                           [loc_n_visit1, loc_n_visit_2, ..., loc_n_visit_n]" << endl;
-    cerr << "                        ]," << endl;
-    cerr << "                        [ // rep 2" << endl;
-    cerr << "                           [x1, x2, ..., x_n]," << endl;
-    cerr << "                           [loc_1_visit1, loc_1_visit_2, ..., loc_1_visit_n]," << endl;
-    cerr << "                           [loc_2_visit1, loc_2_visit_2, ..., loc_2_visit_n]," << endl;
-    cerr << "                           ..." << endl;
-    cerr << "                           [loc_n_visit1, loc_n_visit_2, ..., loc_n_visit_n]" << endl;
-    cerr << "                        ], ..." << endl;
-    cerr << "                     ]]" << endl;
-    cerr << endl;
+    std::cerr << "Usage: poplr_arrest [-c n] [-t p] part_style db_treatment tt_file mt_file filename.json" << std::endl;
+    std::cerr << "       where" << std::endl;
+    std::cerr << "           part_style   is H[orizontal] | V[ertical | N[one]] grouping" << std::endl;
+    std::cerr << "           db_treatment is 0 = Not arrest (no converting values, use every line)" << std::endl;
+    std::cerr << "                           1 = ARREST with probs (convert values, apply PLR to Green lines, special probs to others)" << std::endl;
+    std::cerr << "                           2 = ARREST no probs (convert values, only all-Green locations)" << std::endl;
+    std::cerr << "           -c n         Restrict permutation count to n (default 5000 or visit!)." << std::endl;
+    std::cerr << "           -t p         Only include p-values <= p in the computation of S (default 1.1)." << std::endl;
+    std::cerr << "          tt_file is a csv file containing P(tt|mt): one row per mt (" << ArrestSeries::mt_domain_size << " rows ";
+    std::cerr << ArrestSeries::mt_domain_min << ":" << ArrestSeries::mt_domain_max << "), one column per tt (";
+    std::cerr << ArrestSeries::tt_domain_size << " cols, " << ArrestSeries::tt_domain_min << ":" << ArrestSeries::tt_domain_max << ")." << std::endl;
+    std::cerr << "          mt_file is a csv file containing P(mt<17|tt): one row, one column per tt (";
+    std::cerr << ArrestSeries::tt_domain_size << " cols, " << ArrestSeries::tt_domain_min << ":" << ArrestSeries::tt_domain_max << ")." << std::endl;
+    std::cerr << "          filename.json is the JSON input file." << std::endl;
+    std::cerr << std::endl;
+    std::cerr << "        Horizontal partitioning groups rows/locations with the same number of visits." << std::endl;
+    std::cerr << "        Vertical partitioning groups columns/visits so that locations all have the same number of NAs at the start." << std::endl;
+    std::cerr << "        None partitioning does no grouping and just ignores NAs in regressions." << std::endl;
+    std::cerr << "        Permuting happens within groups and group order remains the same." << std::endl;
+    std::cerr << std::endl;
+    std::cerr << "        JSON file is [[" << std::endl;
+    std::cerr << "                        [ // rep 1" << std::endl;
+    std::cerr << "                           [x1, x2, ..., x_n]," << std::endl;
+    std::cerr << "                           [loc_1_visit1, loc_1_visit_2, ..., loc_1_visit_n]," << std::endl;
+    std::cerr << "                           [loc_2_visit1, loc_2_visit_2, ..., loc_2_visit_n]," << std::endl;
+    std::cerr << "                            ..." << std::endl;
+    std::cerr << "                           [loc_n_visit1, loc_n_visit_2, ..., loc_n_visit_n]" << std::endl;
+    std::cerr << "                        ]," << std::endl;
+    std::cerr << "                        [ // rep 2" << std::endl;
+    std::cerr << "                           [x1, x2, ..., x_n]," << std::endl;
+    std::cerr << "                           [loc_1_visit1, loc_1_visit_2, ..., loc_1_visit_n]," << std::endl;
+    std::cerr << "                           [loc_2_visit1, loc_2_visit_2, ..., loc_2_visit_n]," << std::endl;
+    std::cerr << "                           ..." << std::endl;
+    std::cerr << "                           [loc_n_visit1, loc_n_visit_2, ..., loc_n_visit_n]" << std::endl;
+    std::cerr << "                        ], ..." << std::endl;
+    std::cerr << "                     ]]" << std::endl;    std::cerr << std::endl;
     exit(-1);
 }
 
 int main(int argc, char *argv[]) {
-    // Tests
-
-    /*
-    PermutationIterator pi(15, 3);
-    PermutationIterator pi(0, 5000);
-    while (pi.hasNext()) {
-        cout << "p ";
-        for (int x : pi.next())
-            cout << x << " ";
-        cout << endl;
-    }
-    return 0;
-    */
-
-    /*
-    vector<vector<vector<double>>> tests = {
-       {{  1,   2, 3},
-        {  1,   2, 3},
-        {  1,   2, 3},
-        {  1,   2, 3}},
-
-       {{  1,    2,     3, 4},
-        {  1,    2,     3, 4},
-        {"NA", "NA",    3, 4},
-        {"NA", "NA",    3, 4},
-        {"NA", "NA",  "NA", 4},
-        {"NA", "NA",  "NA", 4}},
-
-       {{  8,    7,    6,  5, 4, 3, 2, 1},
-        {  8,    7,    7,  7, 7, 7, 7, 7},
-        {"NA", "NA",   3,  4, 4, 4, 4, 4},
-        {"NA", "NA", "NA", 4, 4, 4, 4, 4}},
-
-    };
-
-
-    for (vector<vector<double>> series : tests) {
-            // Print input
-        cout << "************" << endl;
-        for (vector<double> loc : series) {
-            for (double val : loc) {
-                cout << val << " ";
-            }
-            cout << endl;
-        }
-
-            // Print permutations
-        cout << "-------------" << endl;
-        auto bs = get_boundaries(series);
-        print("bs", bs);
-        PermutationIterator pi(10, bs);
-        while (pi.hasNext()) {
-            vector<int> perm = pi.next();
-            print("", perm);
-        }
+    if (argc < 6) {
+        std::cerr << "\nMissing a mandatory argument." << std::endl << std::endl;
+        usage();
     }
 
-    cout << PoPLR4(tests[2], 5000) << endl;
-    */
-
-        // set default arguments
-    int max_perm_count = 5000;                       // for -c
-    function<double(Series, int, double, bool)> PoPLR = PoPLR4;    // for -H  or -I
-    ArrestSeries::ArrestProcessType arrest = ArrestSeries::ArrestProcessType::NOT_ARREST; // for -d
-    double slope_upper_limit = numeric_limits<double>::infinity();  // for -s
-    bool verbose = false;
+    int max_perm_count = 5000;
+    float p_threshold = 1.1;
     string filename;
     string pr_tt_given_mt_filename;
     string pr_mtlt17_given_tt_filename;
+    int optional_arg_pos = argc - 7; // p_a _ _ _ _  HV 012 tt mt json
+                                     //              -5 -4 -3  -2 argc-1
 
-        // process options
-    for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "-c") == 0) {
-            max_perm_count = stoi(argv[++i]);
-        } else if (strcmp(argv[i], "-g") == 0) {
-            switch (argv[++i][0]) {
-                case 'V': PoPLR = PoPLR4; break;
-                case 'H' : PoPLR = PoPLR5; break;
-                case 'I' : PoPLR = PoPLR6; break;
-                default: {
-                    cerr << "Invalid group type. Expected V, H, or I." << endl;
-                    usage();
-                }
-            }
-        } else if (strcmp(argv[i], "-d") == 0) {
-            switch (stoi(argv[++i])) {
-                case 0: arrest = ArrestSeries::ArrestProcessType::NOT_ARREST; break;
-                case 1: arrest = ArrestSeries::ArrestProcessType::ARREST_WITH_PROBS; break;
-                case 2: arrest = ArrestSeries::ArrestProcessType::ARREST_NO_PROBS; break;
-                default: {
-                    cerr << "Invalid db type. Expected 0, 1, or 2." << endl;
-                    usage();
-                }
-            }
-        } else if (strcmp(argv[i], "-s") == 0) {
-            slope_upper_limit = stod(argv[++i]);
-        } else if (strcmp(argv[i], "-v") == 0) {
-            verbose = true;
-        } else if (i == argc - 3) {
-            pr_tt_given_mt_filename = argv[i];
-        } else if (i == argc - 2) {
-            pr_mtlt17_given_tt_filename = argv[i];
-        } else if (i == argc - 1) {
-            filename = argv[i];
+    while (optional_arg_pos > 0) {
+        if (strcmp(argv[optional_arg_pos], "-c") == 0)
+            max_perm_count = stoi(argv[optional_arg_pos + 1]);
+        else if (strcmp(argv[optional_arg_pos], "-t") == 0)
+            p_threshold = stof(argv[optional_arg_pos + 1]);
+        else {
+            std::cerr << "Unknown optional argument: " << argv[optional_arg_pos] << endl;
+            usage();
+        }
+
+        optional_arg_pos -= 2;
+    }
+
+        // argc - 5 is style of partitioning
+    function<double(Series, int, float)> PoPLR_to_use;
+    if (argv[argc - 5][0] == 'H' || argv[argc - 5][0] == 'h')
+        PoPLR_to_use = PoPLR5;
+    else if (argv[argc - 5][0] == 'V' || argv[argc - 5][0] == 'v')
+        PoPLR_to_use = PoPLR4;
+    else if (argv[argc - 5][0] == 'N' || argv[argc - 5][0] == 'n')
+        PoPLR_to_use = PoPLR0;
+    else {
+        std::cerr << "\nInvalid part_type." << std::endl << std::endl;
+        usage();
+    }
+
+        // argc - 4 is type of data
+    ArrestSeries::ArrestProcessType arrest;
+    switch (stoi(argv[argc - 4])) {
+        case 0: arrest = ArrestSeries::ArrestProcessType::NOT_ARREST; break;
+        case 1: arrest = ArrestSeries::ArrestProcessType::ARREST_WITH_PROBS; break;
+        case 2: arrest = ArrestSeries::ArrestProcessType::ARREST_NO_PROBS; break;
+        default: {
+            std::cerr << "\nInvalid db_type." << std::endl << std::endl;
+            usage();
         }
     }
+    
+    pr_tt_given_mt_filename = argv[argc - 3];
+    pr_mtlt17_given_tt_filename = argv[argc - 2];
+    filename = argv[argc - 1];
+
     if (filename.empty()) {
-        cerr << "No json filename given." << endl;
+        std::cerr << "\nNo P(tt | mt) filename given." << std::endl << std::endl;
         usage();
     }
     if (pr_tt_given_mt_filename.empty()) {
-        cerr << "No P(mt|tt) filename given." << endl;
+        std::cerr << "\nNo P(mt < 17 | tt) filename given." << std::endl << std::endl;
+        usage();
+    }
+    if (pr_mtlt17_given_tt_filename.empty()) {
+        std::cerr << "\nNo P(mt < 17 | tt) filename given." << std::endl << std::endl;
         usage();
     }
 
-    vector<Eye> eyes = read_json(filename);
+    vector<vector<long double>> pr_tt_given_mt = read_csv(pr_tt_given_mt_filename, ArrestSeries::mt_domain_size, ArrestSeries::tt_domain_size, true);
+    vector<vector<long double>> pr_mtlt17_given_tt_2d = read_csv(pr_mtlt17_given_tt_filename, 1, ArrestSeries::tt_domain_size, false);
+    vector<long double> pr_mtlt17_given_tt;
 
-    cout << "eye,rep,visit,p" << endl;
-    //#pragma omp parallel for
+    if (pr_tt_given_mt.empty()) {
+        std::cerr << "\nTrouble reading " << pr_tt_given_mt_filename << std::endl << std::endl;
+        usage();
+    }
+    if (pr_mtlt17_given_tt_2d.empty()) {
+        std::cerr << "\nTrouble reading " << pr_mtlt17_given_tt_filename << std::endl << std::endl;
+        usage();
+    } else {
+        pr_mtlt17_given_tt = pr_mtlt17_given_tt_2d[0];
+    }
+
+    vector<Eye> eyes = read_json(argv[argc - 1]);
+
+    std::cout << "eye,rep,visit,p" << std::endl;
+    #pragma omp parallel for
     for (int i_eye = 0 ; i_eye < eyes.size(); i_eye++) {
         for (int i_rep = 0 ; i_rep < eyes[i_eye].size(); i_rep++) {
-            for (int visit = eyes[i_eye][i_rep][0].size(); visit >= 6; visit--) {
-//print("series before preProcess", eyes[i_eye][i_rep]);
+            for (int visit = eyes[i_eye][i_rep].second[0].size(); visit >= 6; visit--) {
                 Series series = preProcess(eyes[i_eye][i_rep], visit);
-//print("series after preProcess", series);
-                ArrestSeries *as = new ArrestSeries(series, arrest, pr_tt_given_mt_filename, pr_mtlt17_given_tt_filename);
-//cout << as->get_min_p() << endl;
-//print("greens", as->get_series());
-                double poplr_p = PoPLR(as->get_series(), max_perm_count, slope_upper_limit, verbose);
+                ArrestSeries *as = new ArrestSeries(series, arrest, pr_tt_given_mt, pr_mtlt17_given_tt);
+                double poplr_p = PoPLR_to_use(as->get_series(), max_perm_count, p_threshold);
                 double other_ps = as->get_min_p();
-                if (verbose)
-                    as->print_ps();
                 #pragma omp critical
                 {
-                cout << i_eye << "," << i_rep << "," << visit << ",";
-                cout << (poplr_p < other_ps ? poplr_p :other_ps);
-                cout << endl;
+                std::cout << i_eye << "," << i_rep << "," << visit << ",";
+                std::cout << (poplr_p < other_ps ? poplr_p :other_ps);
+                std::cout << std::endl;
                 //print("Series:", series);
                 }
             }
