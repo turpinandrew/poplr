@@ -14,6 +14,7 @@ using namespace std;
 // Base class for permutation iterators
 // These are infinite iterators, so have no end. 
 // If they run out of permutations, then they just cycle back to the start.
+// ASSUMES: 1..n <= 15 
 class PermutationBase {
 public:
     /*
@@ -109,11 +110,10 @@ public:
     }
 
     void setup(int n) {
-        for (int j = 0; j < n; j++)
+        for (int j = 0; j < n; j++) {
             A[j] = j + 1;
-
-        for (int j = 0; j < n; j++)
             c[j] = 0;
+        }
 
         i = 1; 
     }

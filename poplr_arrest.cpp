@@ -107,6 +107,7 @@ void usage() {
     std::cerr << "                           2 = ARREST no probs (convert values, only all-Green locations)" << std::endl;
     std::cerr << "           -c n         Restrict permutation count to n (default 5000 or visit!)." << std::endl;
     std::cerr << "           -t p         Only include p-values <= p in the computation of S (default 0.05)." << std::endl;
+    std::cerr << "           -a n         Aging slope per year (t test is HO: slope >= n) (default -0.1)." << std::endl;
     std::cerr << "           -v n         Verbosity level 0 = none (default) 1 = sep Green only and other probs." << std::endl;
     std::cerr << "          tt_file is a csv file containing P(tt|mt): one row per mt (" << ArrestSeries::mt_domain_size << " rows ";
     std::cerr << ArrestSeries::mt_domain_min << ":" << ArrestSeries::mt_domain_max << "), one column per tt (";
@@ -147,6 +148,7 @@ int main(int argc, char *argv[]) {
 
     int max_perm_count = 5000;
     float p_threshold = 0.05;
+    double aging_slope = -0.1;
     int verbosity_level = 0;
     string filename;
     string pr_tt_given_mt_filename;
@@ -161,6 +163,8 @@ int main(int argc, char *argv[]) {
             p_threshold = stof(argv[optional_arg_pos + 1]);
         else if (strcmp(argv[optional_arg_pos], "-v") == 0)
             verbosity_level = stoi(argv[optional_arg_pos + 1]);
+        else if (strcmp(argv[optional_arg_pos], "-a") == 0)
+            aging_slope = stod(argv[optional_arg_pos + 1]);
         else {
             std::cerr << "Unknown optional argument: " << argv[optional_arg_pos] << endl;
             usage();
@@ -170,7 +174,7 @@ int main(int argc, char *argv[]) {
     }
 
         // argc - 5 is style of partitioning
-    function<double(Series, int, float, int)> PoPLR_to_use;
+    function<double(Series, int, float, int, double)> PoPLR_to_use;
     if (argv[argc - 5][0] == 'H' || argv[argc - 5][0] == 'h')
         PoPLR_to_use = PoPLR5;
     else if (argv[argc - 5][0] == 'V' || argv[argc - 5][0] == 'v')
@@ -235,7 +239,7 @@ int main(int argc, char *argv[]) {
             for (int visit = eyes[i_eye][i_rep].second[0].size(); visit >= 6; visit--) {
                 Series series = preProcess(eyes[i_eye][i_rep], visit);
                 ArrestSeries *as = new ArrestSeries(series, arrest, pr_tt_given_mt, pr_mtlt17_given_tt);
-                double poplr_p = PoPLR_to_use(as->get_series(), max_perm_count, p_threshold, verbosity_level);
+                double poplr_p = PoPLR_to_use(as->get_series(), max_perm_count, p_threshold, verbosity_level, aging_slope);
                 double other_ps = as->get_min_p();
                 #pragma omp critical
                 {

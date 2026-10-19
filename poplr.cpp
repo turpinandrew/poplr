@@ -54,15 +54,18 @@ vector<int> get_boundaries(const Series& series) {
     Does not partition based on NaNs.
     NaNs are just skipped when computing means and sums.
 
+    One sided t-test (H0: slope >= aging_slope) per location.
+
     ASSUMES: locations have at least 6 non-NaN values in their row.
 
     @param series A pair <vector of x values, A matrix of dB values; rows are locations, columns are visits>
     @param perm_count Number of permutations of series to get p-value for S
     @param verbosity_level Verbosity level for debugging and output
+    @param aging_slope Value to subtract from the estimated slope (beta) when computing the t-statistic.
 
     @return Estimated probability of stability of the series
 */
-double PoPLR(Series series, PermutationIterator *perms, float p_threshold, int verbosity_level) {
+double PoPLR(Series series, PermutationIterator *perms, float p_threshold, int verbosity_level, double aging_slope) {
     int num_locations = series.second.size();
     if (num_locations < 2) 
         return 1.0;
@@ -154,7 +157,7 @@ double PoPLR(Series series, PermutationIterator *perms, float p_threshold, int v
                 }
             } else {
                 se = sqrt(sse / (n[loc] - 2)) / sqrtSumXdSq[loc];
-                t = beta / se;
+                t = (beta - aging_slope) / se;
                 boost::math::students_t dist(n[loc] - 2);
                 p_vals[loc] = cdf(dist, t);
             }
@@ -191,10 +194,11 @@ double PoPLR(Series series, PermutationIterator *perms, float p_threshold, int v
     @param series A pair <vector of x values, A matrix of dB values; rows are locations, columns are visits>
     @param perm_count Number of permutations of series to get p-value for S
     @param verbosity_level Verbosity level for debugging and output
+    @param aging_slope Value to subtract from the estimated slope (beta) when computing the t-statistic.
 
     @return Estimated probability of stability of the series
 */
-double PoPLR0(const Series series, const int perm_count, const float p_threshold, int verbosity_level) {
+double PoPLR0(const Series series, const int perm_count, const float p_threshold, int verbosity_level, double aging_slope) {
     int num_locations = series.second.size();
     if (num_locations < 2) 
         return 1.0;
@@ -206,7 +210,7 @@ double PoPLR0(const Series series, const int perm_count, const float p_threshold
         this_pc = tgamma(num_visits + 1);
 
     PermutationIterator pi(this_pc, num_visits);
-    return PoPLR(series, &pi, p_threshold, verbosity_level);
+    return PoPLR(series, &pi, p_threshold, verbosity_level, aging_slope);
 }
 
 /*
@@ -216,10 +220,11 @@ double PoPLR0(const Series series, const int perm_count, const float p_threshold
     @param series A pair <vector of x values, A matrix of dB values; rows are locations, columns are visits>
     @param perm_count Number of permutations of series to get p-value for S
     @param verbosity_level Verbosity level for debugging and output
+    @param aging_slope Value to subtract from the estimated slope (beta) when computing the t-statistic.
 
     @return Estimated probability of stability of the series
 */
-double PoPLR4(const Series series, const int perm_count, const float p_threshold, int verbosity_level) {
+double PoPLR4(const Series series, const int perm_count, const float p_threshold, int verbosity_level, double aging_slope) {
     int num_locations = series.second.size();
     if (num_locations < 2) 
         return 1.0;
@@ -232,7 +237,7 @@ double PoPLR4(const Series series, const int perm_count, const float p_threshold
 
     vector<int> boundaries = get_boundaries(series);
     PermutationIterator pi(this_pc, boundaries);
-    return PoPLR(series, &pi, p_threshold, verbosity_level);
+    return PoPLR(series, &pi, p_threshold, verbosity_level, aging_slope);
 }
 
 /*
@@ -243,10 +248,11 @@ double PoPLR4(const Series series, const int perm_count, const float p_threshold
     @param series A pair <vector of x values, A matrix of dB values; rows are locations, columns are visits>
     @param perm_count Number of permutations of series to get p-value for S
     @param verbosity_level Verbosity level for debugging and output
+    @param aging_slope Value to subtract from the estimated slope (beta) when computing the t-statistic.
 
     @return Estimated probability of stability of the series
 */
-double PoPLR5(const Series series, const int perm_count, const float p_threshold, int verbosity_level) {
+double PoPLR5(const Series series, const int perm_count, const float p_threshold, int verbosity_level, double aging_slope) {
     int num_locations = series.second.size();
 
         // Work out number of leading NaNs (skips)
@@ -282,7 +288,7 @@ double PoPLR5(const Series series, const int perm_count, const float p_threshold
 
         if (sub_series.second.size() > 0) {
             PermutationIterator pi(this_perm_count, num_visits);
-            double p = PoPLR(sub_series, &pi, p_threshold, verbosity_level);
+            double p = PoPLR(sub_series, &pi, p_threshold, verbosity_level, aging_slope);
             if (p < minP) 
                 minP = p;
         }
