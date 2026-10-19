@@ -106,7 +106,8 @@ void usage() {
     std::cerr << "                           1 = ARREST with probs (convert values, apply PLR to Green lines, special probs to others)" << std::endl;
     std::cerr << "                           2 = ARREST no probs (convert values, only all-Green locations)" << std::endl;
     std::cerr << "           -c n         Restrict permutation count to n (default 5000 or visit!)." << std::endl;
-    std::cerr << "           -t p         Only include p-values <= p in the computation of S (default 1.1)." << std::endl;
+    std::cerr << "           -t p         Only include p-values <= p in the computation of S (default 0.05)." << std::endl;
+    std::cerr << "           -v n         Verbosity level 0 = none (default) 1 = sep Green only and other probs." << std::endl;
     std::cerr << "          tt_file is a csv file containing P(tt|mt): one row per mt (" << ArrestSeries::mt_domain_size << " rows ";
     std::cerr << ArrestSeries::mt_domain_min << ":" << ArrestSeries::mt_domain_max << "), one column per tt (";
     std::cerr << ArrestSeries::tt_domain_size << " cols, " << ArrestSeries::tt_domain_min << ":" << ArrestSeries::tt_domain_max << ")." << std::endl;
@@ -145,7 +146,8 @@ int main(int argc, char *argv[]) {
     }
 
     int max_perm_count = 5000;
-    float p_threshold = 1.1;
+    float p_threshold = 0.05;
+    int verbosity_level = 0;
     string filename;
     string pr_tt_given_mt_filename;
     string pr_mtlt17_given_tt_filename;
@@ -157,6 +159,8 @@ int main(int argc, char *argv[]) {
             max_perm_count = stoi(argv[optional_arg_pos + 1]);
         else if (strcmp(argv[optional_arg_pos], "-t") == 0)
             p_threshold = stof(argv[optional_arg_pos + 1]);
+        else if (strcmp(argv[optional_arg_pos], "-v") == 0)
+            verbosity_level = stoi(argv[optional_arg_pos + 1]);
         else {
             std::cerr << "Unknown optional argument: " << argv[optional_arg_pos] << endl;
             usage();
@@ -166,7 +170,7 @@ int main(int argc, char *argv[]) {
     }
 
         // argc - 5 is style of partitioning
-    function<double(Series, int, float)> PoPLR_to_use;
+    function<double(Series, int, float, int)> PoPLR_to_use;
     if (argv[argc - 5][0] == 'H' || argv[argc - 5][0] == 'h')
         PoPLR_to_use = PoPLR5;
     else if (argv[argc - 5][0] == 'V' || argv[argc - 5][0] == 'v')
@@ -231,10 +235,16 @@ int main(int argc, char *argv[]) {
             for (int visit = eyes[i_eye][i_rep].second[0].size(); visit >= 6; visit--) {
                 Series series = preProcess(eyes[i_eye][i_rep], visit);
                 ArrestSeries *as = new ArrestSeries(series, arrest, pr_tt_given_mt, pr_mtlt17_given_tt);
-                double poplr_p = PoPLR_to_use(as->get_series(), max_perm_count, p_threshold);
+                double poplr_p = PoPLR_to_use(as->get_series(), max_perm_count, p_threshold, verbosity_level);
                 double other_ps = as->get_min_p();
                 #pragma omp critical
                 {
+                if (verbosity_level == 1) {
+                    std::cout << i_eye << "," << i_rep << "," << visit << ", PoPLR  on greens:" << poplr_p << std::endl;
+                    std::cout << i_eye << "," << i_rep << "," << visit << ", probs not greens:" << other_ps << std::endl;
+                    print("Pr G->Y", as->get_pr_gys());
+                    print("Pr Y->R", as->get_pr_yrs());
+                }
                 std::cout << i_eye << "," << i_rep << "," << visit << ",";
                 std::cout << (poplr_p < other_ps ? poplr_p :other_ps);
                 std::cout << std::endl;

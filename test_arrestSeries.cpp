@@ -169,7 +169,7 @@ Series a_ip006 {{0, 0.364134154688569, 0.747433264887064, 1.13073237508556, 1.34
 void tester(Series s, Series a, double expected_p, int expected_size, string header) {
     ArrestSeries *as = new ArrestSeries(s, ArrestSeries::ArrestProcessType::ARREST_WITH_PROBS, pr_tt_given_mt, pr_mtlt17_given_tt);
 
-    double poplr_p = PoPLR0(as->get_series(), 1000, 0.05);
+    double poplr_p = PoPLR0(as->get_series(), 1000, 0.05, 1);
     double other_ps = as->get_min_p();
     double p = poplr_p < other_ps ? poplr_p :other_ps;
 

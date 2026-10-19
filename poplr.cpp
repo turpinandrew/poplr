@@ -58,10 +58,11 @@ vector<int> get_boundaries(const Series& series) {
 
     @param series A pair <vector of x values, A matrix of dB values; rows are locations, columns are visits>
     @param perm_count Number of permutations of series to get p-value for S
+    @param verbosity_level Verbosity level for debugging and output
 
     @return Estimated probability of stability of the series
 */
-double PoPLR(Series series, PermutationIterator *perms, float p_threshold) {
+double PoPLR(Series series, PermutationIterator *perms, float p_threshold, int verbosity_level) {
     int num_locations = series.second.size();
     if (num_locations < 2) 
         return 1.0;
@@ -189,10 +190,11 @@ double PoPLR(Series series, PermutationIterator *perms, float p_threshold) {
 
     @param series A pair <vector of x values, A matrix of dB values; rows are locations, columns are visits>
     @param perm_count Number of permutations of series to get p-value for S
+    @param verbosity_level Verbosity level for debugging and output
 
     @return Estimated probability of stability of the series
 */
-double PoPLR0(const Series series, const int perm_count, const float p_threshold) {
+double PoPLR0(const Series series, const int perm_count, const float p_threshold, int verbosity_level) {
     int num_locations = series.second.size();
     if (num_locations < 2) 
         return 1.0;
@@ -204,7 +206,7 @@ double PoPLR0(const Series series, const int perm_count, const float p_threshold
         this_pc = tgamma(num_visits + 1);
 
     PermutationIterator pi(this_pc, num_visits);
-    return PoPLR(series, &pi, p_threshold);
+    return PoPLR(series, &pi, p_threshold, verbosity_level);
 }
 
 /*
@@ -213,10 +215,11 @@ double PoPLR0(const Series series, const int perm_count, const float p_threshold
 
     @param series A pair <vector of x values, A matrix of dB values; rows are locations, columns are visits>
     @param perm_count Number of permutations of series to get p-value for S
+    @param verbosity_level Verbosity level for debugging and output
 
     @return Estimated probability of stability of the series
 */
-double PoPLR4(const Series series, const int perm_count, const float p_threshold) {
+double PoPLR4(const Series series, const int perm_count, const float p_threshold, int verbosity_level) {
     int num_locations = series.second.size();
     if (num_locations < 2) 
         return 1.0;
@@ -229,7 +232,7 @@ double PoPLR4(const Series series, const int perm_count, const float p_threshold
 
     vector<int> boundaries = get_boundaries(series);
     PermutationIterator pi(this_pc, boundaries);
-    return PoPLR(series, &pi, p_threshold);
+    return PoPLR(series, &pi, p_threshold, verbosity_level);
 }
 
 /*
@@ -239,10 +242,11 @@ double PoPLR4(const Series series, const int perm_count, const float p_threshold
 
     @param series A pair <vector of x values, A matrix of dB values; rows are locations, columns are visits>
     @param perm_count Number of permutations of series to get p-value for S
+    @param verbosity_level Verbosity level for debugging and output
 
     @return Estimated probability of stability of the series
 */
-double PoPLR5(const Series series, const int perm_count, const float p_threshold) {
+double PoPLR5(const Series series, const int perm_count, const float p_threshold, int verbosity_level) {
     int num_locations = series.second.size();
 
         // Work out number of leading NaNs (skips)
@@ -278,7 +282,7 @@ double PoPLR5(const Series series, const int perm_count, const float p_threshold
 
         if (sub_series.second.size() > 0) {
             PermutationIterator pi(this_perm_count, num_visits);
-            double p = PoPLR(sub_series, &pi, p_threshold);
+            double p = PoPLR(sub_series, &pi, p_threshold, verbosity_level);
             if (p < minP) 
                 minP = p;
         }

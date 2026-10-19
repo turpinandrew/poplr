@@ -12,9 +12,9 @@ using Location = std::vector<double>;   // number of visits long
 using Series = std::pair<std::vector<double>, std::vector<Location>>;   // <x[n], y[locs][n]>
 using Eye = std::vector<Series>;
 
-double PoPLR0(const Series series, const int max_perm_count, const float p_threshold);
-double PoPLR4(const Series series, const int max_perm_count, const float p_threshold);
-double PoPLR5(const Series series, const int max_perm_count, const float p_threshold);
+double PoPLR0(const Series series, const int max_perm_count, const float p_threshold, int verbosity_level);
+double PoPLR4(const Series series, const int max_perm_count, const float p_threshold, int verbosity_level);
+double PoPLR5(const Series series, const int max_perm_count, const float p_threshold, int verbosity_level);
 
     // Utility print helpers for debugging
 template<typename T>
